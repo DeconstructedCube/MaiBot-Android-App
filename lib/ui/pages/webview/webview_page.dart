@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -401,12 +402,12 @@ class _WebViewPageState extends State<WebViewPage> {
 
       // 根据是否多选，调用相应的 API
       if (allowMultiple) {
-        final FilePickerResult? result = await FilePicker.pickFiles(
+        final List<PlatformFile> result = await FilePicker.pickFiles(
           type: pickingType,
           allowedExtensions: allowedExtensions,
         );
-        if (result != null) {
-          pickedFiles = result.files;
+        if (result.isNotEmpty) {
+          pickedFiles = result;
         }
       } else {
         final PlatformFile? file = await FilePicker.pickFile(
@@ -480,7 +481,7 @@ class _WebViewPageState extends State<WebViewPage> {
   Future<void> _getClipboardData(WebViewController controller) async {
     final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
     final text = clipboardData?.text ?? '';
-    controller.runJavaScript('window.clipboardText = "$text";');
+    controller.runJavaScript('window.clipboardText = ${jsonEncode(text)};');
   }
 
   @override

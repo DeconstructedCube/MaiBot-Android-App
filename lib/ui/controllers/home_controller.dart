@@ -114,8 +114,11 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     await Directory(RuntimeEnvir.homePath).create(recursive: true);
     await Directory(RuntimeEnvir.binPath).create(recursive: true);
 
-    await AssetsUtils.copyAssetToPath('assets/${Config.ubuntuFileName}',
-        '${RuntimeEnvir.homePath}/${Config.ubuntuFileName}');
+    // 仅在根文件系统尚未就绪时才从 Asset 拷贝 61.2MB 压缩包，避免每次冷启动带来冗余 I/O
+    if (!InstallerService.isRootfsReady()) {
+      await AssetsUtils.copyAssetToPath('assets/${Config.ubuntuFileName}',
+          '${RuntimeEnvir.homePath}/${Config.ubuntuFileName}');
+    }
     
     // 开始 Dart 驱动的安装流
     final success = await InstallerService.runInstallPipeline(

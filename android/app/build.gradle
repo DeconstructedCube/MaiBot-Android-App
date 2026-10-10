@@ -12,7 +12,7 @@ if (hasKeystoreFile) {
 }
 android {
     namespace 'com.maibot.maibot_android'
-    compileSdk = 37
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -37,7 +37,7 @@ android {
     defaultConfig {
         applicationId 'com.maibot.maibot_android'
         minSdk = 24
-        targetSdk = 37
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         ndk {

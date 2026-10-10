@@ -22,6 +22,7 @@ class TerminalTab {
   final Terminal terminal;
   bool isActive;
   final StreamSubscription? outputSubscription;
+  final StreamSubscription? stderrSubscription;
   final Process? process;
 
   TerminalTab({
@@ -31,8 +32,20 @@ class TerminalTab {
     required this.terminal,
     this.isActive = false,
     this.outputSubscription,
+    this.stderrSubscription,
     this.process,
   });
+
+  void dispose() {
+    outputSubscription?.cancel();
+    stderrSubscription?.cancel();
+    try {
+      process?.stdin.close();
+    } catch (_) {}
+    try {
+      process?.kill(ProcessSignal.sigkill);
+    } catch (_) {}
+  }
 }
 
 /// 多终端标签页管理器
@@ -104,8 +117,7 @@ class TerminalTabManager extends GetxController {
     }
 
     try {
-      tab.outputSubscription?.cancel();
-      tab.process?.kill(ProcessSignal.sigkill);
+      tab.dispose();
       tabs.removeAt(index);
 
       if (index == activeTabIndex.value) {
@@ -139,12 +151,12 @@ class TerminalTabManager extends GetxController {
         process.stdin.add(utf8.encode(data));
       };
 
-      final sub = process.stdout
+      final subStdout = process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen((data) {
         newTerminal.write(data.toTerminalCrlf());
       });
-      process.stderr
+      final subStderr = process.stderr
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen((data) {
         newTerminal.write(data.toTerminalCrlf());
@@ -160,8 +172,8 @@ class TerminalTabManager extends GetxController {
         type: TerminalTabType.system,
         terminal: newTerminal,
         isActive: false,
-        outputSubscription: sub,
-        process: process,
+        outputSubscription: subStdout,
+        stderrSubscription: subStderr,
       );
 
       tabs.add(newTab);
@@ -188,8 +200,7 @@ class TerminalTabManager extends GetxController {
     for (var tab in tabs) {
       if (tab.type == TerminalTabType.system) {
         try {
-          tab.outputSubscription?.cancel();
-          tab.process?.kill(ProcessSignal.sigkill);
+          tab.dispose();
         } catch (e) {
           Log.e('清理终端资源失败: $e', tag: 'TerminalTabManager');
         }

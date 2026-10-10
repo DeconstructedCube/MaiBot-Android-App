@@ -321,8 +321,12 @@ class ProotService : Service() {
     }
 
     override fun onDestroy() {
-        maibotProcess?.stop()
-        napcatProcess?.stop()
+        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+        val binPath = sp.getString("binPath", null) ?: applicationInfo.nativeLibraryDir
+        val tmpPath = sp.getString("tmpPath", null) ?: cacheDir.absolutePath
+        val ubuntuPath = sp.getString("ubuntuPath", null)
+            ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+        safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }

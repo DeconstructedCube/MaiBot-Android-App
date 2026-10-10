@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:global_repository/global_repository.dart';
 import 'package:toml/toml.dart';
@@ -7,6 +8,12 @@ import 'package:toml/toml.dart';
 import '../constants/scripts.dart' as scripts;
 
 class ConfigService {
+  static String _generateSecureToken([int length = 24]) {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(length, (_) => rand.nextInt(256));
+    return base64Url.encode(bytes).replaceAll('=', '');
+  }
+
   static void ensureConfigsSynced() {
     try {
       final String napcatConfigDir = '${scripts.ubuntuPath}/root/napcat/config';
@@ -16,7 +23,7 @@ class ConfigService {
       final String adapterConfigPath = '$adapterConfigDir/config.toml';
 
       // 1. Ensure NapCat onebot11.json exists with a token
-      String token = 'kasdkfljsadhlskdjhasdlkfshdlafksjdhf';
+      String token = _generateSecureToken();
       int port = 8095;
 
       final onebotFile = File(onebotPath);

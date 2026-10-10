@@ -13,6 +13,17 @@ class InstallerService {
   /// NapCat 重装时的一次性临时备份文件路径
   static String get napcatTempBackupPath => '${RuntimeEnvir.homePath}/.napcat_reinstall_backup.tar.gz';
 
+  /// 检查 Ubuntu 根文件系统是否已就绪
+  static bool isRootfsReady() {
+    final ubuntuDir = Directory(scripts.ubuntuPath);
+    final rootfsMarker = File('${scripts.ubuntuPath}/.rootfs_ready');
+    if (ubuntuDir.existsSync() && rootfsMarker.existsSync()) {
+      final coreFile = File('${scripts.ubuntuPath}/bin/bash');
+      return coreFile.existsSync();
+    }
+    return false;
+  }
+
   static Future<bool> runInstallPipeline({
     required Function(String) onProgress,
     Function(String)? onLog,
@@ -21,13 +32,7 @@ class InstallerService {
     
     // 1. 原生解压 (Native Extraction)
     final rootfsMarker = File('${scripts.ubuntuPath}/.rootfs_ready');
-    bool isExtracted = false;
-    if (ubuntuDir.existsSync() && rootfsMarker.existsSync()) {
-      final coreFile = File('${scripts.ubuntuPath}/bin/bash');
-      if (coreFile.existsSync()) {
-        isExtracted = true;
-      }
-    }
+    final bool isExtracted = isRootfsReady();
     
     lastInstallWasFresh = !isExtracted;
     
@@ -74,6 +79,14 @@ class InstallerService {
 
         // 标记 Rootfs 解压完成
         rootfsMarker.writeAsStringSync('ready');
+        // 解压完成后删除 61.2MB 临时归档压缩包以节省手机存储
+        try {
+          final archiveFile = File(archivePath);
+          if (archiveFile.existsSync()) {
+            archiveFile.deleteSync();
+            onLog?.call('\x1b[32m[系统]\x1b[0m 已清理安装包归档，释放存储空间\r\n');
+          }
+        } catch (_) {}
 
         // 2. DNS 与系统环境注入
         onProgress('配置网络代理与系统参数...');
