@@ -93,6 +93,7 @@ class ProotRunner {
       'DEBIAN_FRONTEND': 'noninteractive',
       'GIT_TERMINAL_PROMPT': '0',
       'UV_LINK_MODE': 'copy',
+      'MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED': '1',
       'TMPDIR': '/tmp',
       'TEMP': '/tmp',
       'TMP': '/tmp',

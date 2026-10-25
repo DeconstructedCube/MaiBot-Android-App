@@ -37,11 +37,12 @@ void main() {
       expect(errorEvent.payload, '扫码超时');
     });
 
-    test('parses MaiBot WebUI hex token and validates QQ numbers', () {
+    test('parses MaiBot WebUI hex and custom tokens and validates QQ numbers', () {
       const line = '2026-10-25 [INFO] 🔑 WebUI 登录 Token: deadbeef0123456789abcdef';
       expect(NapcatLogParser.parseMaibotToken(line), 'deadbeef0123456789abcdef');
+      const customLine = '2026-10-25 [INFO] 🔑 WebUI 登录 Token: MaiBot_Custom#2026!';
+      expect(NapcatLogParser.parseMaibotToken(customLine), 'MaiBot_Custom#2026!');
       expect(NapcatLogParser.parseMaibotToken('无关日志行'), isNull);
-
       expect(NapcatLogParser.isQQNumber('918272281'), isTrue);
       expect(NapcatLogParser.isQQNumber('12345a'), isFalse);
     });

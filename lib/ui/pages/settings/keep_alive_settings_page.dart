@@ -469,6 +469,12 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               value: _enableWifiLock.get() ?? true,
               onChanged: (bool value) {
                 _enableWifiLock.set(value);
+                unawaited(() async {
+                  try {
+                    const channel = MethodChannel(Config.methodChannel);
+                    await channel.invokeMethod('set_wifi_lock_enabled', {'enabled': value});
+                  } catch (_) {}
+                }());
                 if (mounted) {
                   setState(() {});
                 }

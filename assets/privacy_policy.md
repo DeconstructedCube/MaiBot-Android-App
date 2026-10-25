@@ -8,15 +8,15 @@
 
 - 本应用（MaiBot-Android-App）是完全免费的开源项目，**从未授权任何个人或平台进行收费分发**
 - 如您通过付费渠道获取本应用，请立即向相关平台举报并联系我们
-- 官方获取渠道：[GitHub项目页面](https://github.com/bsfdsagfadg/MaiBot-Android-App)
+- 官方获取渠道：[GitHub项目页面](https://github.com/DeconstructedCube/MaiBot-Android-App)
 
 ## 导言
 
-_MaiBot-Android-App_ 是由「bsfdsagfadg」（以下简称"我们"）基于原开源项目(由「zz6zz666」与「AAswordman」合作开发)进行二次开发与维护的衍生版本。本《隐私政策》旨在向您说明我们如何收集、使用、存储、共享与保护您的信息，以及您如何行使相关权利。请您在使用前仔细阅读并充分理解本政策的全部内容。
+_MaiBot-Android-App_ 是由「DeconstructedCube」（以下简称"我们"）基于原开源项目(由「zz6zz666」与「AAswordman」合作开发)进行二次开发与维护的衍生版本。本《隐私政策》旨在向您说明我们如何收集、使用、存储、共享与保护您的信息，以及您如何行使相关权利。请您在使用前仔细阅读并充分理解本政策的全部内容。
 
 您使用或继续使用我们的服务，即表示您已阅读并同意本《隐私政策》。如对本政策有任何疑问，您可通过以下方式与我们联系：
 - 邮箱：**918272281@qq.com**
-- GitHub：**https://github.com/bsfdsagfadg/**
+- GitHub：**https://github.com/DeconstructedCube/**
 
 ## 1. 适用范围
 
@@ -75,7 +75,7 @@ _MaiBot-Android-App_ 是由「bsfdsagfadg」（以下简称"我们"）基于原�
 
 本应用集成了以下开源项目和框架，其信息处理活动遵循各自的隐私政策：
 
-- **MaiBot 框架**：详情请参考其官方文档（https://github.com/MaiM-with-u/MaiBot）
+- **MaiBot 框架**：详情请参考其官方文档（https://github.com/Mai-with-u/MaiBot）
 - **NapCatQQ 消息适配器**：详情请参考其官方隐私说明（https://napneko.github.io/guide/napcat）
 - **Code LFA 容器环境**：详情请参考其官方隐私说明（https://github.com/nightmare-space/code_lfa）
 
@@ -124,7 +124,7 @@ _MaiBot-Android-App_ 是由「bsfdsagfadg」（以下简称"我们"）基于原�
 
 如对本《隐私政策》或个人信息保护事宜有任何问题、意见或建议，请通过以下方式联系：
 - 邮箱：**918272281@qq.com**
-- GitHub：**https://github.com/bsfdsagfadg/MaiBot-Android-App**
+- GitHub：**https://github.com/DeconstructedCube/MaiBot-Android-App**
 
 我们将尽快审核并在不超过15个工作日内回复。
 

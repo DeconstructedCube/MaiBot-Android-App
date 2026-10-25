@@ -101,6 +101,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     if (cleanLine.contains('访问地址:')) {
       lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
       _syncProgressFromLifecycle();
+      unawaited(napcatController.reloadTokensFromDisk().then((_) {
+        _checkAndNavigateToWebview();
+      }));
       _checkAndNavigateToWebview();
       Future.delayed(const Duration(milliseconds: 2000), () => update());
     }
@@ -120,6 +123,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
           Log.i('有界探测命中 Web 端口 127.0.0.1:$port，标记端口就绪', tag: 'MaiBot');
           lifecycle.markPortsReady();
           _syncProgressFromLifecycle();
+          unawaited(napcatController.reloadTokensFromDisk().then((_) {
+            _checkAndNavigateToWebview();
+          }));
           _checkAndNavigateToWebview();
         },
       ),
@@ -132,6 +138,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     if (await BackendProcessManager.isDaemonRunning()) {
       Log.i('检测到原生守护进程已在运行，跳过安装流水线直接连接', tag: 'MaiBot');
       lifecycle.markBackendRequested(message: '正在恢复后台运行会话...');
+      await napcatController.reloadTokensFromDisk();
       if (await BackendProcessManager.isWebServiceReady()) {
         lifecycle.markPortsReady();
       } else {

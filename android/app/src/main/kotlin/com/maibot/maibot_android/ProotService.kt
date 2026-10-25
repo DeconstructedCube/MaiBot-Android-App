@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.net.wifi.WifiManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -124,6 +125,7 @@ class ProotService : Service() {
     private val commandChannel = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var maibotProcess: ProotProcess? = null
     private var napcatProcess: ProotProcess? = null
 
@@ -134,6 +136,8 @@ class ProotService : Service() {
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MaiBot::BackendLock").apply {
             acquire()
         }
+        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+        updateWifiLock(sp.getBoolean("wifi_lock_enabled", true))
         serviceScope.launch {
             for (cmd in commandChannel) {
                 try {
@@ -142,6 +146,34 @@ class ProotService : Service() {
                     Log.e(TAG, "Command execution error", e)
                 }
             }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun updateWifiLock(enabled: Boolean) {
+        try {
+            if (enabled) {
+                if (wifiLock == null) {
+                    val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                    } else {
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    }
+                    wifiLock = wm?.createWifiLock(mode, "MaiBot::BackendWifiLock")?.apply {
+                        setReferenceCounted(false)
+                    }
+                }
+                if (wifiLock?.isHeld == false) {
+                    wifiLock?.acquire()
+                }
+            } else {
+                if (wifiLock?.isHeld == true) {
+                    wifiLock?.release()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "updateWifiLock error", e)
         }
     }
 
@@ -183,6 +215,12 @@ class ProotService : Service() {
         val action = intent?.action
         val userStopped = sp.getBoolean("user_stopped", false)
 
+        if ("SET_WIFI_LOCK" == action) {
+            val enabled = intent.getBooleanExtra("enabled", true)
+            sp.edit().putBoolean("wifi_lock_enabled", enabled).apply()
+            updateWifiLock(enabled)
+            return START_NOT_STICKY
+        }
         if (userStopped && action != "CONTROL" && action != "START") {
             Log.i(TAG, "用户之前已显式退出应用，禁止后台自动唤醒")
             stopSelf()
@@ -344,8 +382,9 @@ class ProotService : Service() {
             export TMP=/tmp
             mkdir -p /tmp /var/tmp
             cd /root/MaiBot
-            if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); fi
-            if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); fi
+            export MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED=1
+            if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); printf "%s" "$EULA_AGREE" > eula.confirmed; fi
+            if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); printf "%s" "$PRIVACY_AGREE" > privacy.confirmed; fi
             if command -v script >/dev/null 2>&1; then
                 exec script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv run --color always bot.py" /dev/null
             else
@@ -435,6 +474,9 @@ class ProotService : Service() {
         }
         serviceScope.cancel()
 
+        if (wifiLock?.isHeld == true) {
+            wifiLock?.release()
+        }
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }
@@ -720,6 +762,7 @@ class ProotService : Service() {
                         put("LINES", "24")
                         put("LANG", "C.UTF-8")
                         put("LC_ALL", "C.UTF-8")
+                        put("MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED", "1")
                         put("TMPDIR", "/tmp")
                         put("TEMP", "/tmp")
                         put("TMP", "/tmp")

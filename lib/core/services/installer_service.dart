@@ -157,17 +157,22 @@ class InstallerService {
       final pluginsDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins');
       final adapterDir = Directory('${pluginsDir.path}/MaiBot-Napcat-Adapter');
       final adapterMain = File('${adapterDir.path}/adapter.py');
+      final adapterPlugin = File('${adapterDir.path}/plugin.py');
+      final adapterManifest = File('${adapterDir.path}/_manifest.json');
       final adapterInit = File('${adapterDir.path}/__init__.py');
 
       if (!await adapterDir.exists() ||
-          (!await adapterMain.exists() && !await adapterInit.exists())) {
+          (!await adapterMain.exists() &&
+              !await adapterPlugin.exists() &&
+              !await adapterManifest.exists() &&
+              !await adapterInit.exists())) {
         if (await adapterDir.exists()) {
           await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
         }
         reportStage(InstallStage.cloningAdapter, '安装默认适配器插件...');
         for (final mirror in MirrorRegistry.githubPrefixMirrors) {
           final adapterUrl =
-              '${mirror}https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter.git';
+              '${mirror}https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git';
           final res = await _runInProot(
             'git -c gc.auto=0 clone --depth=1 --branch main $adapterUrl /root/MaiBot/plugins/MaiBot-Napcat-Adapter',
             onLog: onLog,
@@ -236,29 +241,29 @@ class InstallerService {
           'echo "[APT] 检查并修复破损的系统包..." && dpkg --configure -a || true && apt-get --fix-broken install -y',
           onLog: onLog,
         );
-        reportStage(InstallStage.installingNapcat, '正在下载 NapCatQQ 组件...');
-        bool downloaded = false;
-        for (final mirror in MirrorRegistry.githubPrefixMirrors) {
-          final url =
-              '${mirror}https://raw.githubusercontent.com/bsfdsagfadg/napcat-linux-installer/refs/heads/main/install.sh';
-          final res = await _runInProot(
-            'echo "[网络] 尝试获取安装脚本: $url" && curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
-            onLog: onLog,
-          );
-          if (res) {
-            downloaded = true;
-            break;
-          }
-        }
-        if (!downloaded) return false;
+        reportStage(InstallStage.installingNapcat, '正在部署并执行 NapCatQQ 安装脚本...');
+        final targetNapcatSh = '${scripts.ubuntuPath}/root/napcat.sh';
+        await _deployAssetScript('assets/scripts/napcat_install.sh', targetNapcatSh);
 
-        final success = await _runInProot(
-          r"sed -i 's@apt-get install.*QQ\.deb.*@& || exit 1@g' /root/napcat.sh "
-          r"&& sed -i 's@curl -k -L -#@curl -k -L @g' /root/napcat.sh "
-          r"&& sed -i 's@curl -k -L @curl -k -L --connect-timeout 10 --max-time 300 @g' /root/napcat.sh "
-          r"&& bash /root/napcat.sh",
-          onLog: onLog,
-        );
+        if (!await File(targetNapcatSh).exists() ||
+            await File(targetNapcatSh).length() < 100) {
+          bool downloaded = false;
+          for (final mirror in MirrorRegistry.githubPrefixMirrors) {
+            final url =
+                '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
+            final res = await _runInProot(
+              'echo "[网络] 尝试获取安装脚本: $url" && curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
+              onLog: onLog,
+            );
+            if (res) {
+              downloaded = true;
+              break;
+            }
+          }
+          if (!downloaded) return false;
+        }
+
+        final success = await _runInProot('bash /root/napcat.sh', onLog: onLog);
         if (!success) return false;
 
         await _restoreAndCleanNapcatTempBackup(

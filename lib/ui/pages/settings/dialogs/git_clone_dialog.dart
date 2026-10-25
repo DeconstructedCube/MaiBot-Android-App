@@ -31,7 +31,7 @@ Future<void> showCustomGitCloneDialog() async {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '示例：\nhttps://github.com/MaiM-with-u/MaiBot.git',
+                  '示例：\nhttps://github.com/Mai-with-u/MaiBot.git',
                   style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8), fontFamily: 'monospace'),
                 ),
                 const SizedBox(height: 16),

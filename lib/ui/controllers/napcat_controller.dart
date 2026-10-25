@@ -25,7 +25,7 @@ class NapcatController extends GetxController {
   void onInit() {
     super.onInit();
     napCatWebUiEnabledRx.value = napCatWebUiEnabled.get() ?? false;
-    _loadMaibotTokenFromFile(); // 应用初始化时尝试读取已有 Token 供冷启动直接使用
+    unawaited(reloadTokensFromDisk());
   }
 
   // 更新 NapCat WebUI 启用状态
@@ -34,7 +34,15 @@ class NapcatController extends GetxController {
     napCatWebUiEnabledRx.value = value;
   }
 
-  /// 优先从本地 webui.json 文件直接读取 WebUI 登录凭证 (Token)
+  /// 从本地配置文件恢复 MaiBot 与 NapCat 的 Token 及登录状态（支持后台常驻重连与冷启动）
+  Future<void> reloadTokensFromDisk() async {
+    await Future.wait([
+      _loadMaibotTokenFromFile(),
+      _loadNapcatTokenFromFile(),
+    ]);
+  }
+
+  /// 从本地 /root/MaiBot/data/webui.json 直接读取 MaiBot WebUI 登录凭证 (Token)
   Future<bool> _loadMaibotTokenFromFile() async {
     try {
       final file = File('$ubuntuPath/root/MaiBot/data/webui.json');
@@ -51,13 +59,57 @@ class NapcatController extends GetxController {
         }
       }
     } catch (e) {
-      Log.e('读取 webui.json 失败: $e', tag: 'MaiBot');
+      Log.e('读取 MaiBot webui.json 失败: $e', tag: 'MaiBot');
     }
     return false;
   }
 
+  /// 从本地 /root/napcat/config/webui.json 读取 NapCat Token 与自动登录状态
+  Future<bool> _loadNapcatTokenFromFile() async {
+    try {
+      final configDir = Directory('$ubuntuPath/root/napcat/config');
+      if (!await configDir.exists()) return false;
+
+      final webuiFile = File('${configDir.path}/webui.json');
+      if (await webuiFile.exists()) {
+        final content = await webuiFile.readAsString();
+        final parsed = jsonDecode(content);
+        if (parsed is Map) {
+          final token = parsed['token']?.toString() ?? '';
+          if (token.isNotEmpty && napCatWebUiToken.value.isEmpty) {
+            napCatWebUiToken.value = token;
+            Log.i('成功从 napcat/config/webui.json 读取到 NapCat Token', tag: 'MaiBot');
+          }
+          final autoLogin = parsed['autoLoginAccount']?.toString() ?? '';
+          if (autoLogin.isNotEmpty) {
+            isQrcodeProcessed = true;
+          }
+        }
+      }
+
+      if (!isQrcodeProcessed) {
+        await for (final entity in configDir.list()) {
+          final fileName = entity.uri.pathSegments.last;
+          if (fileName.startsWith('onebot11_') && fileName.endsWith('.json')) {
+            final qq = fileName.substring(
+              'onebot11_'.length,
+              fileName.length - '.json'.length,
+            );
+            if (NapcatLogParser.isQQNumber(qq)) {
+              isQrcodeProcessed = true;
+              break;
+            }
+          }
+        }
+      }
+      return napCatWebUiToken.value.isNotEmpty;
+    } catch (e) {
+      Log.w('读取 NapCat webui.json 失败: $e', tag: 'MaiBot');
+      return false;
+    }
+  }
+
   void handleNapcatOutput(String event) async {
-    // 剥离ANSI颜色代码，防止颜色字符干扰正则表达式匹配
     final cleanEvent = NapcatLogParser.stripAnsi(event);
 
     for (final parsed in NapcatLogParser.parseNapcat(cleanEvent)) {
@@ -84,7 +136,6 @@ class NapcatController extends GetxController {
           if (!_isQrcodeShowing.value) {
             await _showQrcodeDialog();
           } else {
-            // Refresh existing QR code
             final qrcodePath = '$ubuntuPath/root/napcat/cache/qrcode.png';
             await FileImage(File(qrcodePath)).evict();
             _qrcodeRefreshTrigger.value++;
@@ -93,31 +144,25 @@ class NapcatController extends GetxController {
 
         case NapcatLogEventType.configLoaded:
           if (_isQrcodeShowing.value) {
-            // 关闭对话框
             if (_qrcodeDialog != null) {
               Get.back();
               _isQrcodeShowing.value = false;
               _qrcodeDialog = null;
             }
 
-            // 标记二维码处理完成
             isQrcodeProcessed = true;
-
-            // 检测登录并询问是否保存QQ
             _checkAndPromptSaveQQ();
           }
           break;
 
         case NapcatLogEventType.loginError:
           if (_isQrcodeShowing.value) {
-            // 关闭二维码对话框
             if (_qrcodeDialog != null) {
               Get.back();
               _isQrcodeShowing.value = false;
               _qrcodeDialog = null;
             }
 
-            // 显示错误提示
             Get.snackbar(
               'NapCat 登录失败',
               parsed.payload ?? '登录失败',
@@ -147,7 +192,6 @@ class NapcatController extends GetxController {
       return;
     }
 
-    // 清除图片缓存，防止多次生成同名二维码时 UI 显示旧的失效二维码
     await FileImage(qrcodeFile).evict();
 
     _qrcodeDialog = Dialog(
@@ -168,7 +212,11 @@ class NapcatController extends GetxController {
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(Icons.qr_code_scanner_rounded, color: colorScheme.onPrimaryContainer, size: 28),
+                  child: Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: colorScheme.onPrimaryContainer,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Text(
@@ -189,7 +237,9 @@ class NapcatController extends GetxController {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.06),
@@ -218,14 +268,12 @@ class NapcatController extends GetxController {
         },
       ),
     );
-    // 检查异步等待期间是否已经触发了登录成功
     if (isQrcodeProcessed) {
       _isQrcodeShowing.value = false;
       _qrcodeDialog = null;
       return;
     }
 
-    // 使用GetX的导航管理避免上下文问题
     await Get.dialog(
       _qrcodeDialog!,
       barrierDismissible: false,
@@ -236,26 +284,24 @@ class NapcatController extends GetxController {
   }
 
   void handleMaibotOutput(String event) {
-    // 剥离ANSI颜色代码
     final cleanEvent = NapcatLogParser.stripAnsi(event);
 
-    // 适配新版日志：🔑 WebUI 登录 Token: ...
     final token = NapcatLogParser.parseMaibotToken(cleanEvent);
     if (token != null) {
-      // 从日志中动态捕获到 Token，直接更新状态，不再从文件重复读取
       maiBotWebUiToken.value = token;
       Log.i('成功从日志中抓取到 MaiBot Token: $token', tag: 'MaiBot');
+    } else if (cleanEvent.contains('WebUI Token 已加载') &&
+        maiBotWebUiToken.value.isEmpty) {
+      unawaited(_loadMaibotTokenFromFile());
     }
   }
 
-  // 检测登录并询问是否保存QQ
   void _checkAndPromptSaveQQ() async {
     try {
       final String configPath = '$ubuntuPath/root/napcat/config';
       final Directory configDir = Directory(configPath);
       if (!await configDir.exists()) return;
 
-      // 扫描 onebot11_QQ.json 文件
       final List<FileSystemEntity> files = await configDir.list().toList();
       String? loggedInQQ;
 
@@ -263,8 +309,9 @@ class NapcatController extends GetxController {
         final String fileName = file.path.split(Platform.pathSeparator).last;
         if (fileName.startsWith('onebot11_') && fileName.endsWith('.json')) {
           loggedInQQ = fileName.substring(
-              'onebot11_'.length, fileName.length - '.json'.length);
-          // 确保是纯数字QQ号
+            'onebot11_'.length,
+            fileName.length - '.json'.length,
+          );
           if (NapcatLogParser.isQQNumber(loggedInQQ)) {
             break;
           } else {
@@ -275,7 +322,6 @@ class NapcatController extends GetxController {
 
       if (loggedInQQ == null || loggedInQQ.isEmpty) return;
 
-      // 读取 webui.json
       final File webuiFile = File('$configPath/webui.json');
       if (!await webuiFile.exists()) return;
 
@@ -285,13 +331,13 @@ class NapcatController extends GetxController {
           webuiConfig['autoLoginAccount']?.toString() ?? '';
 
       if (currentQQ.isEmpty) {
-        // 弹出对话框询问
         Get.dialog(
           AlertDialog(
             icon: const Icon(Icons.account_circle_rounded, size: 28),
             title: const Text('快速登录设置'),
             content: Text(
-                '检测到您已登录 QQ: $loggedInQQ\n是否将其保存为快速登录账号？\n设置后下次启动将免扫码自动登录。'),
+              '检测到您已登录 QQ: $loggedInQQ\n是否将其保存为快速登录账号？\n设置后下次启动将免扫码自动登录。',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Get.back(),
@@ -305,8 +351,11 @@ class NapcatController extends GetxController {
                       const JsonEncoder.withIndent('    ').convert(webuiConfig),
                     );
                     Get.back();
-                    Get.snackbar('保存成功', '已将 $loggedInQQ 设置为快速登录账号',
-                        snackPosition: SnackPosition.BOTTOM);
+                    Get.snackbar(
+                      '保存成功',
+                      '已将 $loggedInQQ 设置为快速登录账号',
+                      snackPosition: SnackPosition.BOTTOM,
+                    );
                   }());
                 },
                 child: const Text('保存'),

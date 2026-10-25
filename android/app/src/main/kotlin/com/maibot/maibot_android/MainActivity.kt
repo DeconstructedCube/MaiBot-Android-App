@@ -157,6 +157,19 @@ class MainActivity : FragmentActivity() {
                     sp.edit().putBoolean("auto_start_enabled", enabled).apply()
                     result.success(true)
                 }
+                "set_wifi_lock_enabled" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+                    sp.edit().putBoolean("wifi_lock_enabled", enabled).apply()
+                    val intent = Intent(mContext, ProotService::class.java).apply {
+                        this.action = "SET_WIFI_LOCK"
+                        putExtra("enabled", enabled)
+                    }
+                    try {
+                        mContext.startService(intent)
+                    } catch (_: Exception) {}
+                    result.success(true)
+                }
                 else -> {
                     result.notImplemented()
                 }

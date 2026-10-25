@@ -4,8 +4,8 @@
 /// 供 [NapcatController] 消费后做出 UI 响应。
 class NapcatLogParser {
   static final _ansiColorRegExp = RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]');
-  static final _napcatTokenRegExp = RegExp(r'WebUi Token:\s+(\w+)');
-  static final _maibotTokenRegExp = RegExp(r'WebUI 登录 Token:\s+([a-f0-9]+)');
+  static final _napcatTokenRegExp = RegExp(r'WebUi Token:\s+(\S+)');
+  static final _maibotTokenRegExp = RegExp(r'WebUI 登录 Token:\s+(\S+)');
   static final _errorMsgRegExp = RegExp(r'"message":"([^"]+)"');
   static final _qqNumRegExp = RegExp(r'^\d+$');
 
@@ -56,7 +56,7 @@ class NapcatLogParser {
     return events;
   }
 
-  /// 解析 MaiBot 日志中的 WebUI 登录 Token，未命中返回 null
+  /// 解析 MaiBot 日志中的 WebUI 登录 Token（支持 64 位 hex 与自定义混合字符 Token），未命中返回 null
   static String? parseMaibotToken(String cleanEvent) {
     if (!cleanEvent.contains('WebUI 登录 Token:')) return null;
     final matches = _maibotTokenRegExp.allMatches(cleanEvent);

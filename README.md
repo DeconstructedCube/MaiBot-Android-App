@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/badge/Platform-Android-green" alt="Android">
     <img src="https://img.shields.io/badge/License-BSD--3--Clause-blue" alt="License">
     <img src="https://img.shields.io/badge/状态-衍生项目-orange" alt="Status">
-    <a href="https://github.com/MaiM-with-u/MaiBot"><img src="https://img.shields.io/badge/Powered_by-MaiBot-pink" alt="Powered by MaiBot"></a>
+    <a href="https://github.com/Mai-with-u/MaiBot"><img src="https://img.shields.io/badge/Powered_by-MaiBot-pink" alt="Powered by MaiBot"></a>
   </p>
 </div>
 
@@ -112,7 +112,7 @@ MaiBot 是一个基于大语言模型的开源对话机器人项目，支持拟�
 本项目站在巨人的肩膀上，没有以下优秀的开源项目，就没有本 App 的诞生：
 
 - [**zz6zz666/AstrBot-Android-App**](https://github.com/zz6zz666/AstrBot-Android-App)：本项目的架构基础与参考来源。
-- [**Mai-with-u/MaiBot**](https://github.com/MaiM-with-u/MaiBot)：MaiBot 开源项目。
+- [**Mai-with-u/MaiBot**](https://github.com/Mai-with-u/MaiBot)：MaiBot 开源项目。
 - [**Code LFA**](https://github.com/nightmare-space/code_lfa)：提供 Android 端 Ubuntu 容器底层环境。
 - [**NapCatQQ**](https://napneko.github.io/guide/napcat)：QQ 协议适配器。
 
