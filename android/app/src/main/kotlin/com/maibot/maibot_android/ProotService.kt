@@ -738,7 +738,7 @@ class ProotService : Service() {
                     stdoutJob?.cancel()
                     stdoutJob = launch {
                         val buffer = ByteArray(4096)
-                        var read: Int
+                        var read = 0
                         try {
                             while (isActive && stdout.read(buffer).also { read = it } != -1) {
                                 if (read > 0) {
