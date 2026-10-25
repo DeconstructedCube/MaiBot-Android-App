@@ -383,8 +383,8 @@ class ProotService : Service() {
             mkdir -p /tmp /var/tmp
             cd /root/MaiBot
             export MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED=1
-            if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); printf "%s" "$EULA_AGREE" > eula.confirmed; fi
-            if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); printf "%s" "$PRIVACY_AGREE" > privacy.confirmed; fi
+            if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); md5sum EULA.md | awk '{printf "%s", $1}' > eula.confirmed; fi
+            if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); md5sum PRIVACY.md | awk '{printf "%s", $1}' > privacy.confirmed; fi
             if command -v script >/dev/null 2>&1; then
                 exec script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv run --color always bot.py" /dev/null
             else
