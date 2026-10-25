@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:file_picker/file_picker.dart';
+import 'webview_file_selector.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../controllers/home_controller.dart';
 import '../settings/settings_page.dart';
@@ -165,7 +165,7 @@ class _WebViewPageState extends State<WebViewPage> {
         ..setAllowFileAccess(true)
         ..setAllowContentAccess(true)
         // 设置文件选择回调
-        ..setOnShowFileSelector(_handleFileSelection);
+        ..setOnShowFileSelector(WebViewFileSelector.handleFileSelection);
     }
   }
 
@@ -306,141 +306,6 @@ class _WebViewPageState extends State<WebViewPage> {
     return _customControllers[url]!;
   }
 
-  // 处理文件选择
-  Future<List<String>> _handleFileSelection(FileSelectorParams params) async {
-    try {
-      // 用于存放最终选择的文件列表
-      List<PlatformFile> pickedFiles = [];
-
-      // 判断是否接受多个文件
-      final bool allowMultiple = params.mode == FileSelectorMode.openMultiple;
-
-      // 提取文件类型与允许的扩展名参数
-      FileType pickingType = FileType.any;
-      List<String>? allowedExtensions;
-
-      if (params.acceptTypes.isNotEmpty) {
-        final acceptTypes = params.acceptTypes;
-
-        // 检查是否只接受图片
-        final bool isImageOnly = acceptTypes.every((type) =>
-            type.startsWith('image/') ||
-            [
-              'jpg',
-              'jpeg',
-              'png',
-              'gif',
-              'webp',
-              'bmp',
-              '.jpg',
-              '.jpeg',
-              '.png',
-              '.gif',
-              '.webp',
-              '.bmp'
-            ].contains(type.toLowerCase()));
-
-        // 检查是否只接受视频
-        final bool isVideoOnly = acceptTypes.every((type) =>
-            type.startsWith('video/') ||
-            [
-              'mp4',
-              'avi',
-              'mov',
-              'mkv',
-              'flv',
-              'wmv',
-              '.mp4',
-              '.avi',
-              '.mov',
-              '.mkv',
-              '.flv',
-              '.wmv'
-            ].contains(type.toLowerCase()));
-
-        // 检查是否只接受音频
-        final bool isAudioOnly = acceptTypes.every((type) =>
-            type.startsWith('audio/') ||
-            [
-              'mp3',
-              'wav',
-              'ogg',
-              'flac',
-              'm4a',
-              'aac',
-              '.mp3',
-              '.wav',
-              '.ogg',
-              '.flac',
-              '.m4a',
-              '.aac'
-            ].contains(type.toLowerCase()));
-
-        if (isImageOnly) {
-          pickingType = FileType.image;
-        } else if (isVideoOnly) {
-          pickingType = FileType.video;
-        } else if (isAudioOnly) {
-          pickingType = FileType.audio;
-        } else {
-          // 提取所有允许的扩展名
-          final List<String> extensions = [];
-          for (final type in acceptTypes) {
-            if (type.startsWith('.')) {
-              extensions.add(type.substring(1));
-            } else if (!type.contains('/')) {
-              extensions.add(type);
-            }
-          }
-
-          if (extensions.isNotEmpty) {
-            pickingType = FileType.custom;
-            allowedExtensions = extensions;
-          }
-        }
-      }
-
-      // 根据是否多选，调用相应的 API
-      if (allowMultiple) {
-        final List<PlatformFile> result = await FilePicker.pickFiles(
-          type: pickingType,
-          allowedExtensions: allowedExtensions,
-        );
-        if (result.isNotEmpty) {
-          pickedFiles = result;
-        }
-      } else {
-        final PlatformFile? file = await FilePicker.pickFile(
-          type: pickingType,
-          allowedExtensions: allowedExtensions,
-        );
-        if (file != null) {
-          pickedFiles = [file];
-        }
-      }
-
-      // 返回选中的文件路径,转换为 file:// URI 格式
-      if (pickedFiles.isNotEmpty) {
-        final List<String> filePaths =
-            pickedFiles.where((file) => file.path != null).map((file) {
-          final path = file.path!;
-          if (path.startsWith('file://')) {
-            return path;
-          }
-          final normalizedPath = path.replaceAll('\\', '/');
-          return 'file://$normalizedPath';
-        }).toList();
-
-        debugPrint('Selected files: $filePaths');
-        return filePaths;
-      }
-
-      return [];
-    } catch (e) {
-      debugPrint('File selection error: $e');
-      return [];
-    }
-  }
 
   void _injectClipboardScript(WebViewController controller) {
     const String jsCode = '''

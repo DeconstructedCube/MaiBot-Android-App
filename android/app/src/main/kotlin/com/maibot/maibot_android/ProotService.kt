@@ -11,6 +11,18 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -18,10 +30,7 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.util.ArrayList
-import java.util.LinkedList
-import java.util.Timer
-import java.util.TimerTask
+import java.util.concurrent.CopyOnWriteArrayList
 
 enum class ServiceState(val value: String) {
     STOPPED("STOPPED"),
@@ -32,12 +41,87 @@ enum class ServiceState(val value: String) {
     ERROR("ERROR")
 }
 
+/**
+ * 固定容量环形字节缓冲区（零碎块分配，常数时间写入与快照导出）
+ */
+class ByteRingBuffer(private val capacity: Int = 65536) {
+    private val buffer = ByteArray(capacity)
+    private var head = 0
+    private var size = 0
+
+    @Synchronized
+    fun write(data: ByteArray, offset: Int = 0, length: Int = data.size) {
+        if (length <= 0) return
+        if (length >= capacity) {
+            val startOff = offset + (length - capacity)
+            System.arraycopy(data, startOff, buffer, 0, capacity)
+            head = 0
+            size = capacity
+            return
+        }
+        val writePos = (head + size) % capacity
+        val firstPart = minOf(length, capacity - writePos)
+        System.arraycopy(data, offset, buffer, writePos, firstPart)
+        val secondPart = length - firstPart
+        if (secondPart > 0) {
+            System.arraycopy(data, offset + firstPart, buffer, 0, secondPart)
+        }
+        if (size + length > capacity) {
+            val overflow = (size + length) - capacity
+            head = (head + overflow) % capacity
+            size = capacity
+        } else {
+            size += length
+        }
+    }
+
+    @Synchronized
+    fun snapshot(): ByteArray {
+        if (size == 0) return ByteArray(0)
+        val out = ByteArray(size)
+        val firstPart = minOf(size, capacity - head)
+        System.arraycopy(buffer, head, out, 0, firstPart)
+        val secondPart = size - firstPart
+        if (secondPart > 0) {
+            System.arraycopy(buffer, 0, out, firstPart, secondPart)
+        }
+        return out
+    }
+
+    @Synchronized
+    fun clear() {
+        head = 0
+        size = 0
+    }
+}
+
 class ProotService : Service() {
 
     companion object {
         private const val TAG = "ProotService"
         private const val CHANNEL_ID = "maibot_native_backend"
+
+        // 5-Byte Length-Prefixed Binary Frame Types
+        const val FRAME_PTY_DATA: Byte = 0x01
+        const val FRAME_HISTORY_DATA: Byte = 0x02
+        const val FRAME_CONTROL_JSON: Byte = 0x03
+
+        fun packFrame(type: Byte, payload: ByteArray, offset: Int = 0, length: Int = payload.size): ByteArray {
+            val frame = ByteArray(5 + length)
+            frame[0] = type
+            frame[1] = ((length ushr 24) and 0xFF).toByte()
+            frame[2] = ((length ushr 16) and 0xFF).toByte()
+            frame[3] = ((length ushr 8) and 0xFF).toByte()
+            frame[4] = (length and 0xFF).toByte()
+            if (length > 0) {
+                System.arraycopy(payload, offset, frame, 5, length)
+            }
+            return frame
+        }
     }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val commandChannel = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var maibotProcess: ProotProcess? = null
@@ -49,6 +133,15 @@ class ProotService : Service() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MaiBot::BackendLock").apply {
             acquire()
+        }
+        serviceScope.launch {
+            for (cmd in commandChannel) {
+                try {
+                    cmd()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Command execution error", e)
+                }
+            }
         }
     }
 
@@ -126,84 +219,95 @@ class ProotService : Service() {
             val curHome = homePath ?: "${filesDir.absolutePath}/usr"
             val curTmp = tmpPath ?: cacheDir.absolutePath
             val curUbuntu = ubuntuPath ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+            val ctrlAction = intent.getStringExtra("action")?.uppercase() ?: "START"
+            val ctrlTarget = intent.getStringExtra("target")?.uppercase() ?: "ALL"
 
-            if ("STOP" == action) {
-                sp.edit().putBoolean("user_stopped", true).apply()
-                safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
-                stopSelf()
-                return START_NOT_STICKY
+            commandChannel.trySend {
+                handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu)
             }
-
-            if ("CONTROL" == action) {
-                val ctrlAction = intent.getStringExtra("action")?.uppercase() ?: "START"
-                val ctrlTarget = intent.getStringExtra("target")?.uppercase() ?: "ALL"
-                Log.i(TAG, "收到控制指令: action=$ctrlAction, target=$ctrlTarget")
-
-                when (ctrlAction) {
-                    "START" -> {
-                        sp.edit().putBoolean("user_stopped", false).apply()
-                        if (ctrlTarget == "ALL" || ctrlTarget == "MAIBOT") {
-                            startMaiBot(curBin, curHome, curTmp, curUbuntu)
-                        }
-                        if (ctrlTarget == "ALL" || ctrlTarget == "NAPCAT") {
-                            startNapCat(curBin, curHome, curTmp, curUbuntu)
-                        }
-                    }
-                    "STOP" -> {
-                        if (ctrlTarget == "MAIBOT") {
-                            maibotProcess?.stop()
-                        } else if (ctrlTarget == "NAPCAT") {
-                            napcatProcess?.stop()
-                        } else if (ctrlTarget == "ALL") {
-                            sp.edit().putBoolean("user_stopped", true).apply()
-                            safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                stopForeground(STOP_FOREGROUND_REMOVE)
-                            } else {
-                                @Suppress("DEPRECATION")
-                                stopForeground(true)
-                            }
-                            stopSelf()
-                            return START_NOT_STICKY
-                        }
-                    }
-                    "RESTART" -> {
-                        sp.edit().putBoolean("user_stopped", false).apply()
-                        if (ctrlTarget == "MAIBOT") {
-                            startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                        } else if (ctrlTarget == "NAPCAT") {
-                            startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                        } else if (ctrlTarget == "ALL") {
-                            startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                            startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                        }
-                    }
-                    "SAFE_TERMINATE" -> {
-                        safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
-                    }
-                }
-                return START_NOT_STICKY
-            }
-
-            // 检查 RootFS 是否已就绪，避免在未安装解压时拉起损坏的容器进程
-            val rootfsCheck = File(curUbuntu, "bin/bash")
-            if (!rootfsCheck.exists()) {
-                Log.w(TAG, "Ubuntu RootFS 未就绪 (${rootfsCheck.absolutePath} 不存在)，暂缓启动容器进程")
-                return START_NOT_STICKY
-            }
-
-            // 幂等拉起 MaiBot 与 NapCat（内部会判断 isAlive()，已运行的实例不会重启）
-            startMaiBot(curBin, curHome, curTmp, curUbuntu)
-            startNapCat(curBin, curHome, curTmp, curUbuntu)
         }
         return START_NOT_STICKY
     }
+
+    private suspend fun handleCommandAsync(
+        action: String?,
+        ctrlAction: String,
+        ctrlTarget: String,
+        curBin: String,
+        curHome: String,
+        curTmp: String,
+        curUbuntu: String
+    ) {
+        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+
+        if ("STOP" == action) {
+            sp.edit().putBoolean("user_stopped", true).apply()
+            safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+            stopForegroundAndSelf()
+            return
+        }
+
+        if ("CONTROL" == action) {
+            Log.i(TAG, "收到控制指令: action=$ctrlAction, target=$ctrlTarget")
+            when (ctrlAction) {
+                "START" -> {
+                    sp.edit().putBoolean("user_stopped", false).apply()
+                    if (ctrlTarget == "ALL" || ctrlTarget == "MAIBOT") {
+                        startMaiBot(curBin, curHome, curTmp, curUbuntu)
+                    }
+                    if (ctrlTarget == "ALL" || ctrlTarget == "NAPCAT") {
+                        startNapCat(curBin, curHome, curTmp, curUbuntu)
+                    }
+                }
+                "STOP" -> {
+                    if (ctrlTarget == "MAIBOT") {
+                        maibotProcess?.stop()
+                    } else if (ctrlTarget == "NAPCAT") {
+                        napcatProcess?.stop()
+                    } else if (ctrlTarget == "ALL") {
+                        sp.edit().putBoolean("user_stopped", true).apply()
+                        safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+                        stopForegroundAndSelf()
+                    }
+                }
+                "RESTART" -> {
+                    sp.edit().putBoolean("user_stopped", false).apply()
+                    if (ctrlTarget == "MAIBOT") {
+                        startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
+                    } else if (ctrlTarget == "NAPCAT") {
+                        startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
+                    } else if (ctrlTarget == "ALL") {
+                        startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
+                        startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
+                    }
+                }
+                "SAFE_TERMINATE" -> {
+                    safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+                }
+            }
+            return
+        }
+
+        val rootfsCheck = File(curUbuntu, "bin/bash")
+        if (!rootfsCheck.exists()) {
+            Log.w(TAG, "Ubuntu RootFS 未就绪 (${rootfsCheck.absolutePath} 不存在)，暂缓启动容器进程")
+            return
+        }
+
+        startMaiBot(curBin, curHome, curTmp, curUbuntu)
+        startNapCat(curBin, curHome, curTmp, curUbuntu)
+    }
+
+    private fun stopForegroundAndSelf() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+
     private fun startMaiBot(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
         if (!forceRestart && maibotProcess?.isAlive() == true) {
             Log.d(TAG, "MaiBot 进程已在运行，跳过启动")
@@ -230,8 +334,8 @@ class ProotService : Service() {
             export UV_NO_PROGRESS=0
             export UV_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
             export PIP_NO_COLOR=0
-            export COLUMNS=100
-            export LINES=30
+            export COLUMNS=45
+            export LINES=24
             export LANG=C.UTF-8
             export LC_ALL=C.UTF-8
             export UV_LINK_MODE=copy
@@ -271,8 +375,8 @@ class ProotService : Service() {
             export FORCE_COLOR=1
             export CLICOLOR_FORCE=1
             export CLICOLOR=1
-            export COLUMNS=100
-            export LINES=30
+            export COLUMNS=45
+            export LINES=24
             export LANG=C.UTF-8
             export LC_ALL=C.UTF-8
             export TMPDIR=/tmp
@@ -294,21 +398,17 @@ class ProotService : Service() {
         }
     }
 
-    private fun safelyTerminateAllProcesses(binPath: String?, tmpPath: String, ubuntuPath: String) {
+    private suspend fun safelyTerminateAllProcesses(binPath: String?, tmpPath: String, ubuntuPath: String) {
         maibotProcess?.stop()
         napcatProcess?.stop()
         if (binPath != null) {
             try {
-                // 平滑发送 SIGINT 给子进程落盘
                 Runtime.getRuntime().exec(
                     arrayOf("$binPath/busybox", "killall", "-2", "python", "python3", "node", "qq", "bash", "sh")
                 ).waitFor()
             } catch (_: Exception) {}
+            delay(500)
             try {
-                Thread.sleep(600)
-            } catch (_: Exception) {}
-            try {
-                // 强制释放所有容器残留进程
                 Runtime.getRuntime().exec(
                     arrayOf(
                         "$binPath/busybox", "killall", "-9",
@@ -326,7 +426,15 @@ class ProotService : Service() {
         val tmpPath = sp.getString("tmpPath", null) ?: cacheDir.absolutePath
         val ubuntuPath = sp.getString("ubuntuPath", null)
             ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
-        safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
+
+        commandChannel.close()
+        runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(1500L) {
+                safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
+            }
+        }
+        serviceScope.cancel()
+
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
         }
@@ -371,6 +479,53 @@ class ProotService : Service() {
         } catch (_: Exception) {}
     }
 
+    /**
+     * 单个客户端异步连接会话：内置有界非阻塞发送队列，杜绝慢客户端引起容器 stdout 背压死锁
+     */
+    private inner class ClientSession(
+        val socket: Socket,
+        private val onDisconnected: (ClientSession) -> Unit
+    ) {
+        private val writeQueue = Channel<ByteArray>(
+            capacity = 256,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
+        private var writerJob: Job? = null
+
+        fun startWriter(initialFrames: List<ByteArray>) {
+            for (frame in initialFrames) {
+                writeQueue.trySend(frame)
+            }
+            writerJob = serviceScope.launch {
+                try {
+                    val out: OutputStream = socket.getOutputStream()
+                    for (frame in writeQueue) {
+                        out.write(frame)
+                        if (writeQueue.isEmpty) {
+                            out.flush()
+                        }
+                    }
+                } catch (_: IOException) {
+                } finally {
+                    close()
+                }
+            }
+        }
+
+        fun enqueueFrame(frame: ByteArray) {
+            writeQueue.trySend(frame)
+        }
+
+        fun close() {
+            writeQueue.close()
+            writerJob?.cancel()
+            try {
+                socket.close()
+            } catch (_: IOException) {}
+            onDisconnected(this)
+        }
+    }
+
     private inner class ProotProcess(
         private val name: String,
         private val port: Int,
@@ -382,13 +537,14 @@ class ProotService : Service() {
     ) {
         private var process: Process? = null
         private var serverSocket: ServerSocket? = null
-        private val clients = ArrayList<Socket>()
-        private val history = LinkedList<ByteArray>()
-        private var historyLength = 0
-        private val maxHistory = 70000
+        private val clients = CopyOnWriteArrayList<ClientSession>()
+        private val historyBuffer = ByteRingBuffer(65536)
 
         private var restartCount = 0
-        private var restartTimer: Timer? = null
+        private var restartJob: Job? = null
+        private var acceptJob: Job? = null
+        private var stdoutJob: Job? = null
+
         @Volatile
         var isStopped = false
 
@@ -396,32 +552,30 @@ class ProotService : Service() {
         var currentState: ServiceState = ServiceState.STOPPED
             private set
 
+        private fun buildStateFrame(state: ServiceState, pid: Long = -1): ByteArray {
+            val json = "{\"service\":\"${name.lowercase()}\",\"state\":\"${state.value}\",\"retry\":$restartCount,\"pid\":$pid}"
+            val payload = json.toByteArray(Charsets.UTF_8)
+            return packFrame(FRAME_CONTROL_JSON, payload)
+        }
+
         private fun notifyState(state: ServiceState, pid: Long = -1) {
             currentState = state
-            val json = "{\"service\":\"${name.lowercase()}\",\"state\":\"${state.value}\",\"retry\":$restartCount,\"pid\":$pid}"
-            val frame = "\u0002__STATE_CHANGE__:$json\u0003".toByteArray()
-
-            val currentClients: List<Socket>
-            synchronized(clients) {
-                currentClients = ArrayList(clients)
-            }
-            for (client in currentClients) {
-                try {
-                    client.getOutputStream().write(frame)
-                    client.getOutputStream().flush()
-                } catch (_: IOException) {}
+            val frame = buildStateFrame(state, pid)
+            for (client in clients) {
+                client.enqueueFrame(frame)
             }
         }
 
-        private fun initServerSocket() {
+        private suspend fun initServerSocket() {
             val existing = serverSocket
             if (existing != null && !existing.isClosed && existing.isBound) {
                 return
             }
-            if (serverSocket != null) {
-                try { serverSocket?.close() } catch (_: Exception) {}
-                serverSocket = null
-            }
+            try {
+                serverSocket?.close()
+            } catch (_: Exception) {}
+            serverSocket = null
+
             try {
                 serverSocket = ServerSocket().apply {
                     reuseAddress = true
@@ -429,8 +583,8 @@ class ProotService : Service() {
                 }
             } catch (e: IOException) {
                 Log.w(TAG, "$name 端口 $port 初次绑定失败 (${e.message})，延迟重试...")
+                delay(300)
                 try {
-                    Thread.sleep(300)
                     serverSocket = ServerSocket().apply {
                         reuseAddress = true
                         bind(InetSocketAddress("127.0.0.1", port))
@@ -441,35 +595,31 @@ class ProotService : Service() {
                 }
             }
 
-            val ss = serverSocket
-            Thread({
-                while (!isStopped && ss != null && !ss.isClosed) {
+            val ss = serverSocket ?: return
+            acceptJob?.cancel()
+            acceptJob = serviceScope.launch {
+                while (isActive && !isStopped && !ss.isClosed) {
                     try {
-                        val client = ss.accept()
-                        synchronized(clients) {
-                            clients.add(client)
+                        val socket = ss.accept()
+                        val session = ClientSession(socket) { removed ->
+                            clients.remove(removed)
                         }
-                        Thread({
+                        val histBytes = historyBuffer.snapshot()
+                        val initFrames = ArrayList<ByteArray>(2)
+                        if (histBytes.isNotEmpty()) {
+                            initFrames.add(packFrame(FRAME_HISTORY_DATA, histBytes))
+                        }
+                        initFrames.add(buildStateFrame(currentState, -1))
+
+                        clients.add(session)
+                        session.startWriter(initFrames)
+
+                        // 启动客户端上行输入转发协程
+                        launch {
                             try {
-                                val out: OutputStream = client.getOutputStream()
-                                out.write("\u0002__HIST_START__\u0003".toByteArray())
-                                val historySnapshot: List<ByteArray>
-                                synchronized(clients) {
-                                    historySnapshot = ArrayList(history)
-                                }
-                                for (chunk in historySnapshot) {
-                                    out.write(chunk)
-                                }
-                                out.write("\u0002__HIST_END__\u0003".toByteArray())
-
-                                // 发送当前状态快照给新连入的客户端
-                                val json = "{\"service\":\"${name.lowercase()}\",\"state\":\"${currentState.value}\",\"retry\":$restartCount,\"pid\":-1}"
-                                out.write("\u0002__STATE_CHANGE__:$json\u0003".toByteArray())
-                                out.flush()
-
-                                val input: InputStream = client.getInputStream()
+                                val input: InputStream = socket.getInputStream()
                                 val inBuffer = ByteArray(1024)
-                                while (!isStopped) {
+                                while (isActive && !isStopped) {
                                     val inRead = input.read(inBuffer)
                                     if (inRead == -1) break
                                     val p = process
@@ -480,17 +630,18 @@ class ProotService : Service() {
                                     }
                                 }
                             } catch (_: IOException) {
-                                // Client disconnected
                             } finally {
-                                try { client.close() } catch (_: IOException) {}
-                                synchronized(clients) { clients.remove(client) }
+                                session.close()
                             }
-                        }, "$name-ClientThread").start()
+                        }
                     } catch (e: IOException) {
-                        if (!isStopped) Log.d(TAG, "$name accept loop ended: ${e.message}")
+                        if (!isStopped) {
+                            Log.d(TAG, "$name accept loop ended: ${e.message}")
+                        }
+                        break
                     }
                 }
-            }, "$name-AcceptThread").start()
+            }
         }
 
         @Synchronized
@@ -503,135 +654,119 @@ class ProotService : Service() {
                 notifyState(ServiceState.RUNNING)
                 return
             }
-            restartTimer?.cancel()
-            restartTimer = null
+            restartJob?.cancel()
+            restartJob = null
             notifyState(ServiceState.STARTING)
 
-            try {
-                initServerSocket()
+            serviceScope.launch {
+                try {
+                    initServerSocket()
+                    historyBuffer.clear()
 
-                history.clear()
-                historyLength = 0
+                    val cmd = mutableListOf(
+                        "$binPath/proot",
+                        "-0",
+                        "-r", ubuntuPath,
+                        "--link2symlink",
+                        "-b", "/dev",
+                        "-b", "/proc",
+                        "-b", "/sys",
+                        "-b", "$tmpPath:/tmp",
+                        "-b", "$tmpPath:/dev/shm",
+                        "-w", "/root"
+                    )
 
-                val cmd = mutableListOf(
-                    "$binPath/proot",
-                    "-0",
-                    "-r", ubuntuPath,
-                    "--link2symlink",
-                    "-b", "/dev",
-                    "-b", "/proc",
-                    "-b", "/sys",
-                    "-b", "$tmpPath:/tmp",
-                    "-b", "$tmpPath:/dev/shm",
-                    "-w", "/root"
-                )
-
-                // Fake sysdata bindings to prevent Python/uv crashes on restricted Android /proc
-                val fakeProcs = arrayOf(
-                    ".loadavg", ".stat", ".uptime", ".version", ".vmstat",
-                    ".sysctl_entry_cap_last_cap", ".sysctl_inotify_max_user_watches"
-                )
-                val targetProcs = arrayOf(
-                    "/proc/loadavg", "/proc/stat", "/proc/uptime", "/proc/version", "/proc/vmstat",
-                    "/proc/sys/kernel/cap_last_cap", "/proc/sys/fs/inotify/max_user_watches"
-                )
-                for (i in fakeProcs.indices) {
-                    val fakeFile = File("$ubuntuPath/proc/${fakeProcs[i]}")
-                    if (fakeFile.exists()) {
-                        cmd.add("-b")
-                        cmd.add("${fakeFile.absolutePath}:${targetProcs[i]}")
+                    // Fake sysdata bindings to prevent Python/uv crashes on restricted Android /proc
+                    val fakeProcs = arrayOf(
+                        ".loadavg", ".stat", ".uptime", ".version", ".vmstat",
+                        ".sysctl_entry_cap_last_cap", ".sysctl_inotify_max_user_watches"
+                    )
+                    val targetProcs = arrayOf(
+                        "/proc/loadavg", "/proc/stat", "/proc/uptime", "/proc/version", "/proc/vmstat",
+                        "/proc/sys/kernel/cap_last_cap", "/proc/sys/fs/inotify/max_user_watches"
+                    )
+                    for (i in fakeProcs.indices) {
+                        val fakeFile = File("$ubuntuPath/proc/${fakeProcs[i]}")
+                        if (fakeFile.exists()) {
+                            cmd.add("-b")
+                            cmd.add("${fakeFile.absolutePath}:${targetProcs[i]}")
+                        }
                     }
-                }
-                cmd.add("/bin/sh")
+                    cmd.add("/bin/sh")
 
-                val pb = ProcessBuilder(cmd)
-                pb.environment().apply {
-                    put("PATH", "$binPath:/system/bin:/system/xbin")
-                    put("HOME", "/root")
-                    put("PROOT_TMP_DIR", tmpPath)
-                    put("PROOT_LOADER", "$binPath/loader")
-                    put("LD_LIBRARY_PATH", binPath)
-                    put("TERM", "xterm-256color")
-                    put("COLORTERM", "truecolor")
-                    put("FORCE_COLOR", "1")
-                    put("CLICOLOR_FORCE", "1")
-                    put("CLICOLOR", "1")
-                    put("PYTHONUNBUFFERED", "1")
-                    put("PYTHONIOENCODING", "utf-8")
-                    put("PYTHON_COLORS", "1")
-                    put("RICH_FORCE_COLOR", "1")
-                    put("LOGURU_COLORIZE", "true")
-                    put("UV_COLOR", "always")
-                    put("UV_PROGRESS_MODE", "visual")
-                    put("UV_NO_PROGRESS", "0")
-                    put("UV_INDEX_URL", "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple")
-                    put("PIP_NO_COLOR", "0")
-                    put("COLUMNS", "100")
-                    put("LINES", "30")
-                    put("LANG", "C.UTF-8")
-                    put("LC_ALL", "C.UTF-8")
-                    put("TMPDIR", "/tmp")
-                    put("TEMP", "/tmp")
-                    put("TMP", "/tmp")
-                }
-                pb.redirectErrorStream(true)
-                val p = pb.start()
-                process = p
-                val stdin = p.outputStream
-                stdin.write((command + "\n").toByteArray())
-                stdin.flush()
+                    val pb = ProcessBuilder(cmd)
+                    pb.environment().apply {
+                        put("PATH", "$binPath:/system/bin:/system/xbin")
+                        put("HOME", "/root")
+                        put("PROOT_TMP_DIR", tmpPath)
+                        put("PROOT_LOADER", "$binPath/loader")
+                        put("LD_LIBRARY_PATH", binPath)
+                        put("TERM", "xterm-256color")
+                        put("COLORTERM", "truecolor")
+                        put("FORCE_COLOR", "1")
+                        put("CLICOLOR_FORCE", "1")
+                        put("CLICOLOR", "1")
+                        put("PYTHONUNBUFFERED", "1")
+                        put("PYTHONIOENCODING", "utf-8")
+                        put("PYTHON_COLORS", "1")
+                        put("RICH_FORCE_COLOR", "1")
+                        put("LOGURU_COLORIZE", "true")
+                        put("UV_COLOR", "always")
+                        put("UV_PROGRESS_MODE", "visual")
+                        put("UV_NO_PROGRESS", "0")
+                        put("UV_INDEX_URL", "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple")
+                        put("PIP_NO_COLOR", "0")
+                        put("COLUMNS", "45")
+                        put("LINES", "24")
+                        put("LANG", "C.UTF-8")
+                        put("LC_ALL", "C.UTF-8")
+                        put("TMPDIR", "/tmp")
+                        put("TEMP", "/tmp")
+                        put("TMP", "/tmp")
+                    }
+                    pb.redirectErrorStream(true)
+                    val p = pb.start()
+                    process = p
+                    val stdin = p.outputStream
+                    stdin.write((command + "\n").toByteArray(Charsets.UTF_8))
+                    stdin.flush()
 
-                notifyState(ServiceState.RUNNING)
+                    notifyState(ServiceState.RUNNING)
 
-                val processStartTime = System.currentTimeMillis()
-                val stdout = p.inputStream
-                Thread({
-                    val buffer = ByteArray(4096)
-                    var read: Int
-                    try {
-                        while (stdout.read(buffer).also { read = it } != -1) {
-                            val chunk = ByteArray(read)
-                            System.arraycopy(buffer, 0, chunk, 0, read)
-                            val currentClients: List<Socket>
-                            synchronized(clients) {
-                                history.add(chunk)
-                                historyLength += read
-                                while (historyLength > maxHistory && history.size > 1) {
-                                    historyLength -= history.removeFirst().size
-                                }
-                                currentClients = ArrayList(clients)
-                            }
-                            val deadClients = ArrayList<Socket>()
-                            for (client in currentClients) {
-                                try {
-                                    client.getOutputStream().write(chunk)
-                                } catch (_: IOException) {
-                                    try { client.close() } catch (_: IOException) {}
-                                    deadClients.add(client)
+                    val processStartTime = System.currentTimeMillis()
+                    val stdout = p.inputStream
+                    stdoutJob?.cancel()
+                    stdoutJob = launch {
+                        val buffer = ByteArray(4096)
+                        var read: Int
+                        try {
+                            while (isActive && stdout.read(buffer).also { read = it } != -1) {
+                                if (read > 0) {
+                                    historyBuffer.write(buffer, 0, read)
+                                    val frame = packFrame(FRAME_PTY_DATA, buffer, 0, read)
+                                    for (client in clients) {
+                                        client.enqueueFrame(frame)
+                                    }
                                 }
                             }
-                            if (deadClients.isNotEmpty()) {
-                                synchronized(clients) {
-                                    clients.removeAll(deadClients.toSet())
-                                }
+                        } catch (e: IOException) {
+                            if (!isStopped) {
+                                Log.e(TAG, "$name read error", e)
                             }
                         }
-                    } catch (e: IOException) {
-                        Log.e(TAG, "$name read error", e)
-                    }
 
-                    if (!isStopped) {
-                        if (System.currentTimeMillis() - processStartTime > 60000L) {
-                            restartCount = 0
+                        if (!isStopped) {
+                            if (System.currentTimeMillis() - processStartTime > 60000L) {
+                                restartCount = 0
+                            }
+                            scheduleRestart()
                         }
-                        scheduleRestart()
                     }
-                }, "$name-StdoutThread").start()
-
-            } catch (e: Exception) {
-                Log.e(TAG, "$name start error", e)
-                notifyState(ServiceState.ERROR)
-                scheduleRestart()
+                } catch (e: Exception) {
+                    Log.e(TAG, "$name start error", e)
+                    notifyState(ServiceState.ERROR)
+                    scheduleRestart()
+                }
             }
         }
 
@@ -641,23 +776,16 @@ class ProotService : Service() {
                 notifyState(ServiceState.STOPPED)
                 return
             }
-            restartTimer?.cancel()
-            restartTimer = null
-
+            restartJob?.cancel()
             notifyState(ServiceState.RESTARTING)
-            val delay = minOf(3 * (1 shl restartCount), 60)
+            val delaySec = minOf(3 * (1 shl restartCount), 60)
             restartCount++
-            Log.i(TAG, "$name exited, restarting in ${delay}s")
-            restartTimer = Timer().apply {
-                schedule(object : TimerTask() {
-                    override fun run() {
-                        synchronized(this@ProotProcess) {
-                            if (!isStopped) {
-                                start()
-                            }
-                        }
-                    }
-                }, delay * 1000L)
+            Log.i(TAG, "$name exited, restarting in ${delaySec}s")
+            restartJob = serviceScope.launch {
+                delay(delaySec * 1000L)
+                if (!isStopped) {
+                    start()
+                }
             }
         }
 
@@ -680,8 +808,13 @@ class ProotService : Service() {
             isStopped = true
             notifyState(ServiceState.STOPPING)
             restartCount = 0
-            restartTimer?.cancel()
-            restartTimer = null
+            restartJob?.cancel()
+            restartJob = null
+            acceptJob?.cancel()
+            acceptJob = null
+            stdoutJob?.cancel()
+            stdoutJob = null
+
             process?.destroy()
             process = null
             try {
@@ -689,12 +822,10 @@ class ProotService : Service() {
             } catch (_: IOException) {}
             serverSocket = null
 
-            synchronized(clients) {
-                for (client in clients) {
-                    try { client.close() } catch (_: IOException) {}
-                }
-                clients.clear()
+            for (client in clients) {
+                client.close()
             }
+            clients.clear()
             notifyState(ServiceState.STOPPED)
         }
     }

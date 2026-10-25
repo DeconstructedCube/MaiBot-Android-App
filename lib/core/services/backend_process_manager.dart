@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
 import 'config_service.dart';
+import 'port_probe_service.dart';
 import '../../ui/pages/settings/maintenance_actions.dart';
 
 enum ProcessState {
@@ -50,6 +50,8 @@ class BackendProcessManager {
   static final Rx<ProcessState> napcatState = ProcessState.stopped.obs;
   static final RxInt maibotRetryCount = 0.obs;
   static final RxInt napcatRetryCount = 0.obs;
+  static final RxInt maibotPid = (-1).obs;
+  static final RxInt napcatPid = (-1).obs;
 
   static bool _userClickedStop = false;
   static bool get userClickedStop => _userClickedStop;
@@ -64,7 +66,28 @@ class BackendProcessManager {
     });
     Log.d('BackendProcessManager initialized', tag: 'BackendProcessManager');
   }
-  /// 探测后端服务是否已在运行（嗅探 PTY / Web 端口）
+
+  /// 探测原生后台守护服务（ProotService PTY 转发端口）是否已在运行
+  static Future<bool> isDaemonRunning({
+    Duration timeout = const Duration(milliseconds: 400),
+  }) async {
+    return await PortProbeService.isAnyPortOpen(
+      Ports.ptyProbePorts,
+      timeout: timeout,
+    );
+  }
+
+  /// 探测 MaiBot Web 控制台端口（8001 / 6185）是否已真正就绪可访问
+  static Future<bool> isWebServiceReady({
+    Duration timeout = const Duration(milliseconds: 500),
+  }) async {
+    return await PortProbeService.isAnyPortOpen(
+      Ports.localhostProbePorts,
+      timeout: timeout,
+    );
+  }
+
+  /// 探测后端服务是否已在运行
   static Future<bool> isBackendRunning({
     List<int> probePorts = const [
       Ports.maibotPtySocket,
@@ -74,14 +97,10 @@ class BackendProcessManager {
     ],
     Duration timeout = const Duration(milliseconds: 500),
   }) async {
-    for (final port in probePorts) {
-      try {
-        final socket = await Socket.connect('127.0.0.1', port, timeout: timeout);
-        await socket.close();
-        return true;
-      } catch (_) {}
-    }
-    return false;
+    return await PortProbeService.isAnyPortOpen(
+      probePorts,
+      timeout: timeout,
+    );
   }
 
   /// 检查特定服务目标是否已就绪
@@ -96,7 +115,6 @@ class BackendProcessManager {
     }
   }
 
-
   /// 处理从 Socket 接收到的原生状态帧
   static void updateServiceState(String service, String stateStr, {int retry = 0, int pid = -1}) {
     final state = ProcessState.fromString(stateStr);
@@ -104,10 +122,12 @@ class BackendProcessManager {
     if (service.toLowerCase() == 'maibot') {
       maibotState.value = state;
       maibotRetryCount.value = retry;
+      maibotPid.value = pid;
       Log.d('MaiBot 状态更新: $state$pidInfo (重试次数: $retry)', tag: 'BackendProcessManager');
     } else if (service.toLowerCase() == 'napcat') {
       napcatState.value = state;
       napcatRetryCount.value = retry;
+      napcatPid.value = pid;
       Log.d('NapCat 状态更新: $state$pidInfo (重试次数: $retry)', tag: 'BackendProcessManager');
     }
   }
@@ -118,7 +138,7 @@ class BackendProcessManager {
     Log.i('启动后端服务: target=$target', tag: 'BackendProcessManager');
 
     try {
-      ConfigService.ensureConfigsSynced();
+      await ConfigService.ensureConfigsSynced();
       await _channel.invokeMethod('control_backend_service', {
         'action': 'start',
         'target': target.name,
@@ -159,7 +179,7 @@ class BackendProcessManager {
     Log.i('重启服务: target=$target', tag: 'BackendProcessManager');
 
     try {
-      ConfigService.ensureConfigsSynced();
+      await ConfigService.ensureConfigsSynced();
       await _channel.invokeMethod('control_backend_service', {
         'action': 'restart',
         'target': target.name,

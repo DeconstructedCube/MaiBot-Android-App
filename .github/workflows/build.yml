@@ -8,12 +8,19 @@ on:
       - '*'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -42,25 +49,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pub-
 
-      - name: Prepare NDK and CMake directories
-        run: |
-          sudo mkdir -p /usr/local/lib/android/sdk/ndk
-          sudo mkdir -p /usr/local/lib/android/sdk/cmake
-          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/ndk
-          sudo chown -R $USER:$USER /usr/local/lib/android/sdk/cmake
-
-      - name: Cache Android NDK and CMake
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/local/lib/android/sdk/ndk
-            /usr/local/lib/android/sdk/cmake
-          key: ${{ runner.os }}-android-ndk-cmake-${{ hashFiles('android/app/build.gradle') }}
-          restore-keys: |
-            ${{ runner.os }}-android-ndk-cmake-
-
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze
+
+      - name: Run unit tests
+        run: flutter test
 
       - name: Decode Keystore
         env:

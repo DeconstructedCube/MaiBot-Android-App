@@ -26,7 +26,6 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
   bool _isAccessibilityEnabled = false;
   bool _isAutoStartEnabled = true;
 
-  int _stateUpdateCounter = 0;
   final Setting _enableWifiLock = 'enable_wifi_lock'.setting;
 
   bool _shizukuDozeWhitelist = false;
@@ -471,7 +470,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               onChanged: (bool value) {
                 _enableWifiLock.set(value);
                 if (mounted) {
-                  setState(() => _stateUpdateCounter++);
+                  setState(() {});
                 }
               },
             ),
@@ -527,7 +526,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               onChanged: (bool value) {
                 Get.find<HomeController>().setHideFromRecents(value);
                 if (mounted) {
-                  setState(() => _stateUpdateCounter++);
+                  setState(() {});
                 }
               },
             ),

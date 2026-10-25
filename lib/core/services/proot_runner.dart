@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:global_repository/global_repository.dart';
+import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
 import '../utils/file_utils.dart';
 
@@ -23,21 +24,23 @@ class ProotExecResult {
   });
 }
 
-/// 统一 PRoot 环境参数构建与进程执行服务
+/// 统一 PRoot 环境参数构建与进程执行服务（单一事实源 SSOT）
 class ProotRunner {
+  /// 虚拟 /proc 映射表（供 Dart 与 Native 容器环境统一遵循）
+  static const List<List<String>> fakeProcEntries = [
+    ['.loadavg', '/proc/loadavg'],
+    ['.stat', '/proc/stat'],
+    ['.uptime', '/proc/uptime'],
+    ['.version', '/proc/version'],
+    ['.vmstat', '/proc/vmstat'],
+    ['.sysctl_entry_cap_last_cap', '/proc/sys/kernel/cap_last_cap'],
+    ['.sysctl_inotify_max_user_watches', '/proc/sys/fs/inotify/max_user_watches'],
+  ];
+
   /// 收集并构建虚拟 /proc 文件挂载列表，避免 Android 内核权限限制导致 Python/uv 崩溃
   static List<String> getFakeProcBindings() {
-    final fakeProcs = [
-      ['.loadavg', '/proc/loadavg'],
-      ['.stat', '/proc/stat'],
-      ['.uptime', '/proc/uptime'],
-      ['.version', '/proc/version'],
-      ['.vmstat', '/proc/vmstat'],
-      ['.sysctl_entry_cap_last_cap', '/proc/sys/kernel/cap_last_cap'],
-      ['.sysctl_inotify_max_user_watches', '/proc/sys/fs/inotify/max_user_watches'],
-    ];
     final binds = <String>[];
-    for (final pair in fakeProcs) {
+    for (final pair in fakeProcEntries) {
       final fakeFile = File('${scripts.ubuntuPath}/proc/${pair.first}');
       if (fakeFile.existsSync()) {
         binds.addAll(['-b', '${fakeFile.path}:${pair.last}']);
@@ -48,7 +51,7 @@ class ProotRunner {
 
   /// 获取宿主机代理环境变量导出脚本片段（支持 VPN / 代理穿透）
   static String getProxyExportScript() {
-    final envKeys = [
+    const envKeys = [
       'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
       'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
     ];
@@ -62,7 +65,7 @@ class ProotRunner {
     return proxyExports.toString();
   }
 
-  /// 获取统一的 PRoot 环境变量映射
+  /// 获取统一的 PRoot 环境变量映射（强制对齐 COLUMNS=45 与镜像源配置）
   static Map<String, String> getProotEnv({Map<String, String>? extraEnv}) {
     final env = <String, String>{
       'PROOT_TMP_DIR': RuntimeEnvir.tmpPath,
@@ -81,8 +84,10 @@ class ProotRunner {
       'UV_COLOR': 'always',
       'UV_PROGRESS_MODE': 'visual',
       'UV_NO_PROGRESS': '0',
-      'UV_INDEX_URL': 'https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple',
+      'UV_INDEX_URL': MirrorRegistry.pypiPrimaryMirror,
       'PIP_NO_COLOR': '0',
+      'COLUMNS': '45',
+      'LINES': '24',
       'LANG': 'C.UTF-8',
       'LC_ALL': 'C.UTF-8',
       'DEBIAN_FRONTEND': 'noninteractive',

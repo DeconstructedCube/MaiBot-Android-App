@@ -99,6 +99,7 @@ flutter {
 }
 dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
 
 // implementation fileTree(include: ['*.jar', '*aar'], dir: 'libs')
 }

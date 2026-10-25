@@ -18,7 +18,7 @@ class TerminalPage extends StatefulWidget {
 }
 
 class _TerminalPageState extends State<TerminalPage> {
-  final HomeController controller = Get.put(HomeController(), permanent: true);
+  final HomeController controller = Get.find<HomeController>();
 
   // 0: Material You 核心看板模式, 1: MaiBot 启动终端, 2: NapCat 终端
   int _displayMode = 0;
