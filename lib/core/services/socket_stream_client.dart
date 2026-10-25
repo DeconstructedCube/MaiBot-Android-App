@@ -80,8 +80,8 @@ class SocketStreamClient {
   }
 
   void _initUtf8StreamDecoder() {
-    final stringSink = StringConversionSink.fromCallback(_onDecodedPtyText);
-    _ptyUtf8Sink = const Utf8Decoder(allowMalformed: true).startChunkedConversion(stringSink);
+    _ptyUtf8Sink = const Utf8Decoder(allowMalformed: true)
+        .startChunkedConversion(_CallbackStringSink(_onDecodedPtyText));
   }
 
   /// 开始连接（幂等，重复调用无副作用）
@@ -247,4 +247,15 @@ class SocketStreamClient {
     _socket?.destroy();
     _socket = null;
   }
+}
+
+class _CallbackStringSink implements Sink<String> {
+  final void Function(String) onChunk;
+  const _CallbackStringSink(this.onChunk);
+
+  @override
+  void add(String data) => onChunk(data);
+
+  @override
+  void close() {}
 }
