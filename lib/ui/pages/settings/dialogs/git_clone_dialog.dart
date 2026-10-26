@@ -26,7 +26,7 @@ Future<void> showCustomGitCloneDialog() async {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '自定义克隆仓库链接，以使用 fork 的 MaiBot 仓库。\n留空则使用默认逻辑（从镜像源获取官方最新版）。',
+                  '自定义克隆仓库链接，以使用 fork 的 MaiBot 仓库。\n留空则使用官方默认仓库。',
                   style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant, height: 1.4),
                 ),
                 const SizedBox(height: 8),

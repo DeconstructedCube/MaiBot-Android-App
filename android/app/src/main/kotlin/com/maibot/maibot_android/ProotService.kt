@@ -221,6 +221,11 @@ class ProotService : Service() {
             updateWifiLock(enabled)
             return START_NOT_STICKY
         }
+        if ("SET_AUTO_START" == action) {
+            val enabled = intent.getBooleanExtra("enabled", true)
+            sp.edit().putBoolean("auto_start_enabled", enabled).apply()
+            return START_NOT_STICKY
+        }
         if (userStopped && action != "CONTROL" && action != "START") {
             Log.i(TAG, "用户之前已显式退出应用，禁止后台自动唤醒")
             stopSelf()
@@ -300,8 +305,10 @@ class ProotService : Service() {
                 "STOP" -> {
                     if (ctrlTarget == "MAIBOT") {
                         maibotProcess?.stop()
+                        killTargetProcesses(curBin, arrayOf("python", "python3"))
                     } else if (ctrlTarget == "NAPCAT") {
                         napcatProcess?.stop()
+                        killTargetProcesses(curBin, arrayOf("qq", "Xvfb", "xvfb-run", "crashpad_handler"))
                     } else if (ctrlTarget == "ALL") {
                         sp.edit().putBoolean("user_stopped", true).apply()
                         safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
@@ -346,13 +353,17 @@ class ProotService : Service() {
         stopSelf()
     }
 
-    private fun startMaiBot(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
+    private suspend fun startMaiBot(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
         if (!forceRestart && maibotProcess?.isAlive() == true) {
             Log.d(TAG, "MaiBot 进程已在运行，跳过启动")
             return
         }
-        maibotProcess?.stop()
-        maibotProcess = null
+        if (maibotProcess != null) {
+            maibotProcess?.stop()
+            maibotProcess = null
+            killTargetProcesses(binPath, arrayOf("python", "python3"))
+            delay(350)
+        }
 
         Log.i(TAG, "启动 MaiBot 服务进程...")
         val maibotCmd = """
@@ -397,13 +408,17 @@ class ProotService : Service() {
         }
     }
 
-    private fun startNapCat(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
+    private suspend fun startNapCat(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
         if (!forceRestart && napcatProcess?.isAlive() == true) {
             Log.d(TAG, "NapCat 进程已在运行，跳过启动")
             return
         }
-        napcatProcess?.stop()
-        napcatProcess = null
+        if (napcatProcess != null) {
+            napcatProcess?.stop()
+            napcatProcess = null
+            killTargetProcesses(binPath, arrayOf("qq", "Xvfb", "xvfb-run", "crashpad_handler"))
+            delay(350)
+        }
 
         Log.i(TAG, "启动 NapCat 服务进程...")
         cleanNapcatLocks(tmpPath, ubuntuPath)
@@ -435,6 +450,12 @@ class ProotService : Service() {
         napcatProcess = ProotProcess("NapCat", 20002, binPath, homePath, tmpPath, ubuntuPath, napcatCmd).apply {
             start()
         }
+    }
+
+    private fun killTargetProcesses(binPath: String, targets: Array<String>) {
+        try {
+            Runtime.getRuntime().exec(arrayOf("$binPath/busybox", "killall", "-9", *targets)).waitFor()
+        } catch (_: Exception) {}
     }
 
     private suspend fun safelyTerminateAllProcesses(binPath: String?, tmpPath: String, ubuntuPath: String) {
@@ -593,6 +614,18 @@ class ProotService : Service() {
         @Volatile
         var currentState: ServiceState = ServiceState.STOPPED
             private set
+        @Volatile
+        private var currentPid: Long = -1L
+
+        private fun extractPid(p: Process): Long {
+            return try {
+                val field = p.javaClass.getDeclaredField("pid")
+                field.isAccessible = true
+                field.getInt(p).toLong()
+            } catch (_: Exception) {
+                Regex("pid=(\\d+)").find(p.toString())?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+            }
+        }
 
         private fun buildStateFrame(state: ServiceState, pid: Long = -1): ByteArray {
             val json = "{\"service\":\"${name.lowercase()}\",\"state\":\"${state.value}\",\"retry\":$restartCount,\"pid\":$pid}"
@@ -651,7 +684,7 @@ class ProotService : Service() {
                         if (histBytes.isNotEmpty()) {
                             initFrames.add(packFrame(FRAME_HISTORY_DATA, histBytes))
                         }
-                        initFrames.add(buildStateFrame(currentState, -1))
+                        initFrames.add(buildStateFrame(currentState, currentPid))
 
                         clients.add(session)
                         session.startWriter(initFrames)
@@ -693,7 +726,7 @@ class ProotService : Service() {
             }
             if (process != null && isAlive()) {
                 Log.d(TAG, "$name 进程依然存活，无需重复启动")
-                notifyState(ServiceState.RUNNING)
+                notifyState(ServiceState.RUNNING, currentPid)
                 return
             }
             restartJob?.cancel()
@@ -770,11 +803,12 @@ class ProotService : Service() {
                     pb.redirectErrorStream(true)
                     val p = pb.start()
                     process = p
+                    currentPid = extractPid(p)
                     val stdin = p.outputStream
                     stdin.write((command + "\n").toByteArray(Charsets.UTF_8))
                     stdin.flush()
 
-                    notifyState(ServiceState.RUNNING)
+                    notifyState(ServiceState.RUNNING, currentPid)
 
                     val processStartTime = System.currentTimeMillis()
                     val stdout = p.inputStream
@@ -860,6 +894,7 @@ class ProotService : Service() {
 
             process?.destroy()
             process = null
+            currentPid = -1L
             try {
                 serverSocket?.close()
             } catch (_: IOException) {}

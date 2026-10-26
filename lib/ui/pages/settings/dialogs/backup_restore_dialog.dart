@@ -259,7 +259,7 @@ Future<void> showBackupRestoreDialog({
                                       fontWeight: FontWeight.w600),
                                 ),
                                 subtitle: const Text(
-                                  'MaiBot/data (SQLite 数据库、长期记忆、用户画像)',
+                                  'MaiBot/data 目录',
                                   style: TextStyle(fontSize: 11),
                                 ),
                                 value: restoreData,
@@ -280,7 +280,7 @@ Future<void> showBackupRestoreDialog({
                                       fontWeight: FontWeight.w600),
                                 ),
                                 subtitle: const Text(
-                                  'MaiBot/config (bot.toml、模型 API Key、WebUI 令牌)',
+                                  'MaiBot/config 目录',
                                   style: TextStyle(fontSize: 11),
                                 ),
                                 value: restoreConfig,
@@ -301,7 +301,7 @@ Future<void> showBackupRestoreDialog({
                                       fontWeight: FontWeight.w600),
                                 ),
                                 subtitle: const Text(
-                                  'MaiBot/plugins (NapCat 适配器与自定义插件)',
+                                  'MaiBot/plugins 目录',
                                   style: TextStyle(fontSize: 11),
                                 ),
                                 value: restorePlugins,
@@ -322,7 +322,7 @@ Future<void> showBackupRestoreDialog({
                                       fontWeight: FontWeight.w600),
                                 ),
                                 subtitle: const Text(
-                                  'napcat/config (OneBot11 通信令牌与面板凭证)',
+                                  'napcat/config 目录',
                                   style: TextStyle(fontSize: 11),
                                 ),
                                 value: restoreNapcat,
@@ -344,7 +344,7 @@ Future<void> showBackupRestoreDialog({
                       Get.back();
                       onCompleted?.call();
                     },
-                    child: Text(isInitialInstall ? '跳过 (全新初始化)' : '取消'),
+                    child: Text(isInitialInstall ? '跳过' : '取消'),
                   ),
                   FilledButton.icon(
                     icon: const Icon(Icons.check_rounded, size: 18),

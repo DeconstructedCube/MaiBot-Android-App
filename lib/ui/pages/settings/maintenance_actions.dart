@@ -196,7 +196,7 @@ class MaintenanceActions {
       if (success) {
         Get.snackbar(
           '清理完成',
-          'NapCat 与 QQ 已卸载（配置已暂存），应用即将退出，请重新打开以完成重装',
+          'NapCat 与 QQ 已卸载，应用即将退出，请重新打开以完成重装',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 3),
         );
@@ -236,7 +236,7 @@ class MaintenanceActions {
         icon: const Icon(Icons.restart_alt_rounded, size: 28, color: Colors.orange),
         title: const Text('确认重置 Python 环境'),
         content: const Text(
-          '此操作将删除 Python 虚拟环境（.venv 目录）并退出应用。\n'
+          '此操作将删除 Python 虚拟环境并退出应用。\n'
           '下次启动时将自动重新配置环境与依赖。\n\n'
           '确定继续吗？',
         ),

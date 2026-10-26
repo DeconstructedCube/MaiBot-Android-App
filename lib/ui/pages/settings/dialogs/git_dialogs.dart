@@ -474,7 +474,7 @@ Future<void> showSwitchReleaseTagDialog() async {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '提示：版本切换通过检出 Release Tag 实现，与分支切换互斥（会相互覆盖当前检出状态）。当前状态: $currentRef',
+                            '提示：切换版本将检出对应 Release Tag。当前状态: $currentRef',
                             style: TextStyle(
                               fontSize: 11,
                               color: colorScheme.onSurface,
@@ -487,7 +487,7 @@ Future<void> showSwitchReleaseTagDialog() async {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    '选择要检出的 Release 版本（按版本号降序）：',
+                    '选择要检出的 Release 版本：',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                   const SizedBox(height: 6),

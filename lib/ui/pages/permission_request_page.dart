@@ -129,7 +129,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     );
   }
 
-  bool get _isAllRequiredGranted => _notificationGranted && _storageGranted;
+  bool get _isAllRequiredGranted => _notificationGranted;
 
   @override
   Widget build(BuildContext context) {
@@ -202,9 +202,9 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.folder_open_rounded,
                           title: '存储权限',
-                          description: '用于解压 Linux 运行环境、保存数据及管理备份文件。',
+                          description: '用于读写外部存储中的备份文件。',
                           isGranted: _storageGranted,
-                          isRequired: true,
+                          isRequired: false,
                           onRequest: () => unawaited(_requestStoragePermission()),
                         ),
                         const SizedBox(height: 20),

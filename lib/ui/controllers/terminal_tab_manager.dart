@@ -144,7 +144,7 @@ class TerminalTabManager extends GetxController {
     final args = ProotRunner.buildProotArgs(isInteractive: true);
     final env = ProotRunner.getProotEnv();
     try {
-      newTerminal.write('正在启动系统交互终端 (Ubuntu PRoot 环境)...\r\n\r\n');
+      newTerminal.write('正在启动系统交互终端...\r\n\r\n');
       final process = await Process.start(prootPath, args, environment: env);
 
       newTerminal.onOutput = (data) {
@@ -164,6 +164,7 @@ class TerminalTabManager extends GetxController {
 
       process.exitCode.then((code) {
         Log.d('System tab process exited with code $code', tag: 'TerminalTabManager');
+        newTerminal.write('\r\n\x1b[33m[终端会话已退出: $code]\x1b[0m\r\n');
       });
 
       final newTab = TerminalTab(
@@ -174,6 +175,7 @@ class TerminalTabManager extends GetxController {
         isActive: false,
         outputSubscription: subStdout,
         stderrSubscription: subStderr,
+        process: process,
       );
 
       tabs.add(newTab);

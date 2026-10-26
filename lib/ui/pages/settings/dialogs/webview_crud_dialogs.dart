@@ -5,11 +5,11 @@ import '../../../../core/config/app_config.dart';
 import '../../../controllers/webview_controller.dart';
 
 // 显示添加自定义 WebView 对话框
-void showAddWebViewDialog(WebviewController controller) {
+Future<void> showAddWebViewDialog(WebviewController controller) async {
   final titleController = TextEditingController();
   final urlController = TextEditingController();
 
-  Get.dialog(
+  await Get.dialog(
     AlertDialog(
       icon: const Icon(Icons.add_link_rounded, size: 28),
       title: const Text('添加自定义 WebView'),
@@ -85,11 +85,13 @@ void showAddWebViewDialog(WebviewController controller) {
       ],
     ),
   );
+  titleController.dispose();
+  urlController.dispose();
 }
 
 // 显示编辑自定义 WebView 对话框
-void showEditWebViewDialog(
-    WebviewController controller, int index, Map<String, String> webview) {
+Future<void> showEditWebViewDialog(
+    WebviewController controller, int index, Map<String, String> webview) async {
   final titleController = TextEditingController(text: webview['title']);
 
   // 将完整URL转换为简化格式用于编辑
@@ -102,7 +104,7 @@ void showEditWebViewDialog(
 
   final urlController = TextEditingController(text: displayUrl);
 
-  Get.dialog(
+  await Get.dialog(
     AlertDialog(
       icon: const Icon(Icons.edit_rounded, size: 28),
       title: const Text('编辑自定义 WebView'),
@@ -176,6 +178,8 @@ void showEditWebViewDialog(
       ],
     ),
   );
+  titleController.dispose();
+  urlController.dispose();
 }
 
 // 确认删除自定义 WebView

@@ -155,6 +155,13 @@ class MainActivity : FragmentActivity() {
                     val enabled = call.argument<Boolean>("enabled") == true
                     val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
                     sp.edit().putBoolean("auto_start_enabled", enabled).apply()
+                    val intent = Intent(mContext, ProotService::class.java).apply {
+                        this.action = "SET_AUTO_START"
+                        putExtra("enabled", enabled)
+                    }
+                    try {
+                        mContext.startService(intent)
+                    } catch (_: Exception) {}
                     result.success(true)
                 }
                 "set_wifi_lock_enabled" -> {
@@ -300,17 +307,6 @@ class MainActivity : FragmentActivity() {
         return false
     }
 
-    fun triggerExitFromFlutter() {
-        runOnUiThread {
-            val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-            sp.edit().putBoolean("user_stopped", true).apply()
-            val stopIntent = Intent(this, ProotService::class.java).apply {
-                action = "STOP"
-            }
-            startService(stopIntent)
-            finishAffinity()
-        }
-    }
 
     override fun onDestroy() {
         if (instance === this) {

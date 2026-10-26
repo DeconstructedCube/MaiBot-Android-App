@@ -133,7 +133,7 @@ class InstallerService {
       if (!await uvExecutable.exists() ||
           await uvExecutable.length() < 10000 ||
           !await uvxExecutable.exists()) {
-        reportStage(InstallStage.installingUv, '正在下载并安装 Python 依赖管理器 (uv)...');
+        reportStage(InstallStage.installingUv, '正在下载并安装 uv...');
         final success = await _downloadAndInstallUv(onLog);
         if (!success) return false;
       }
@@ -195,7 +195,7 @@ class InstallerService {
         }
         reportStage(
           InstallStage.syncingPythonEnv,
-          '正在同步 Python 依赖库 (国内镜像加速)...',
+          '正在同步 Python 依赖库...',
         );
         final uvSyncCmd = 'cd /root/MaiBot && '
             'if command -v script >/dev/null 2>&1; then '
@@ -460,7 +460,7 @@ class InstallerService {
       return true;
     }
 
-    onProgress('正在检查并安装系统运行依赖 (git/curl/aria2)...');
+    onProgress('正在检查并安装系统运行依赖...');
     await _writeNetworkConfigs(onLog);
 
     for (final mirror in MirrorRegistry.aptPortMirrors) {

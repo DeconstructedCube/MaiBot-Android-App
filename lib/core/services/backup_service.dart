@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import '../constants/scripts.dart' as scripts;
 import 'backend_process_manager.dart';
+import 'config_service.dart';
 import '../utils/file_utils.dart';
 import '../../ui/pages/settings/dialogs/backup_restore_dialog.dart';
 
@@ -354,6 +355,7 @@ class BackupService {
 
           final res = await Process.run('${RuntimeEnvir.binPath}/busybox', args);
           if (res.exitCode == 0) {
+            await ConfigService.ensureConfigsSynced();
             Log.i('选择性恢复成功: $extractTargets', tag: 'BackupService');
             if (showSnackbar) {
               Get.snackbar(

@@ -3,10 +3,10 @@ enum InstallStage {
   extractingRootfs(0.15, '正在解压 Ubuntu 根文件系统...'),
   configuringNetwork(0.25, '配置网络代理与系统参数...'),
   checkingSystemDeps(0.40, '正在检查并安装系统运行依赖...'),
-  installingUv(0.52, '正在下载并安装 Python 依赖管理器 (uv)...'),
+  installingUv(0.52, '正在下载并安装 uv...'),
   cloningMaibot(0.64, '正在获取 MaiBot 源码...'),
   cloningAdapter(0.72, '安装默认适配器插件...'),
-  syncingPythonEnv(0.84, '正在同步 Python 依赖库 (国内镜像加速)...'),
+  syncingPythonEnv(0.84, '正在同步 Python 依赖库...'),
   installingNapcat(0.92, '正在安装 NapCatQQ 组件...'),
   restoringBackup(0.95, '正在恢复配置与历史数据...'),
   completed(0.96, '初始化完成，正在准备启动...');

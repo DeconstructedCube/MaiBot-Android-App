@@ -264,13 +264,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
       if (Platform.isAndroid) {
         final notifStatus = await Permission.notification.status;
-        final manageStorageStatus = await Permission.manageExternalStorage.status;
-        final storageStatus = await Permission.storage.status;
-        final bool hasStorage =
-            manageStorageStatus.isGranted || storageStatus.isGranted;
         final bool hasNotif = notifStatus.isGranted;
 
-        if (!hasNotif || !hasStorage) {
+        if (!hasNotif) {
           final completer = Completer<void>();
           await Get.to(PermissionRequestPage(
             onPermissionsGranted: () {

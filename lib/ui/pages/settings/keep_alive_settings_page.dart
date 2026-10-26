@@ -541,7 +541,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               secondary: const Icon(Icons.rocket_launch_rounded, size: 22),
               title: Text('开机与无障碍自启动', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '开机或连接无障碍服务时，自动在后台拉起 PRoot 容器与 MaiBot（无需打开界面）',
+                '开机或连接无障碍服务时，自动在后台拉起容器与服务',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               value: _isAutoStartEnabled,

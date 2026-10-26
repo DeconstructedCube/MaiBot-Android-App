@@ -278,7 +278,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.alt_route_rounded,
                     iconColor: Colors.teal.shade700,
                     title: '切换 MaiBot 分支',
-                    subtitle: '动态获取并切换分支（兼容自定义 Fork 仓库）',
+                    subtitle: '获取并切换 MaiBot 代码分支',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -291,7 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.sell_rounded,
                     iconColor: Colors.purple,
                     title: '切换 Release 版本',
-                    subtitle: '按 Release Tag 检出版本（与分支切换互斥）',
+                    subtitle: '按 Release Tag 检出指定版本',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -439,7 +439,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     title: '软件版本',
                     subtitle: _appVersion.isEmpty
                         ? '加载中...'
-                        : 'v$_appVersion（点击检查更新）',
+                        : 'v$_appVersion',
                     trailing: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),

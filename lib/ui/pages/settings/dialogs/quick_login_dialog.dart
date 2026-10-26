@@ -64,7 +64,11 @@ Future<void> showQuickLoginDialog() async {
     final newQQ = qqController.text.trim();
 
     try {
-      // 更新 JSON 数据
+      // 确保目录存在并补齐默认配置字段
+      await webuiJsonFile.parent.create(recursive: true);
+      jsonData['host'] ??= '0.0.0.0';
+      jsonData['port'] ??= 6099;
+      jsonData['loginRate'] ??= 3;
       jsonData['autoLoginAccount'] = newQQ;
 
       // 写回文件
