@@ -86,7 +86,7 @@ class ProotRunner {
       'UV_COLOR': 'always',
       'UV_PROGRESS_MODE': 'visual',
       'UV_NO_PROGRESS': '0',
-      'UV_INDEX_URL': MirrorRegistry.pypiPrimaryMirror,
+      'UV_INDEX_URL': MirrorRegistry.activePypiMirror,
       'PIP_NO_COLOR': '0',
       'COLUMNS': '45',
       'LINES': '24',
@@ -99,6 +99,7 @@ class ProotRunner {
       'TMPDIR': '/tmp',
       'TEMP': '/tmp',
       'TMP': '/tmp',
+      if (MirrorRegistry.isDirectNetwork) 'MAIBOT_DIRECT_NETWORK': '1',
     };
     if (extraEnv != null) {
       env.addAll(extraEnv);

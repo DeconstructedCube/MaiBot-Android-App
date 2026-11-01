@@ -1,3 +1,5 @@
+import 'dart:io';
+
 const bool product = bool.fromEnvironment('dart.vm.product');
 
 class Config {
@@ -60,11 +62,20 @@ class Config {
 class MirrorRegistry {
   /// GitHub 原始资源/克隆加速前缀（末尾含 `/` 或为空代表官方直连）
   static const List<String> githubPrefixMirrors = [
-    'https://ghfast.top/',
     'https://gh-proxy.com/',
     'https://mirror.ghproxy.com/',
+    'https://ghfast.top/',
     '',
   ];
+
+  static List<String> _activeGithubPrefixMirrors = List.from(githubPrefixMirrors);
+  static List<String> get activeGithubPrefixMirrors => _activeGithubPrefixMirrors;
+
+  static String _activePypiMirror = pypiPrimaryMirror;
+  static String get activePypiMirror => _activePypiMirror;
+
+  static bool _isDirectNetwork = false;
+  static bool get isDirectNetwork => _isDirectNetwork;
 
   /// Ubuntu Ports (ARM64) APT 软件源镜像列表
   static const List<String> aptPortMirrors = [
@@ -90,6 +101,103 @@ class MirrorRegistry {
     '114.114.114.114',
     '8.8.8.8',
   ];
+
+  /// 在安装流水线开始前，并发探测 GitHub 与 PyPI 线路，优选最佳网络线路（挂梯子优先直连）
+  static Future<void> probeFastestMirrors({void Function(String)? onLog}) async {
+    onLog?.call('\x1b[36m[网络探测]\x1b[0m 正在测速评估网络环境与镜像线路...\r\n');
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+
+    // 1. 并发探测 GitHub 线路（直连 vs 镜像）
+    Future<({String prefix, int latency, bool ok})> testGithubPrefix(String prefix) async {
+      final sw = Stopwatch()..start();
+      try {
+        final url = prefix.isEmpty
+            ? 'https://raw.githubusercontent.com/Mai-with-u/MaiBot/main/pyproject.toml'
+            : '${prefix}https://raw.githubusercontent.com/Mai-with-u/MaiBot/main/pyproject.toml';
+        final uri = Uri.parse(url);
+        final req = await client.getUrl(uri).timeout(const Duration(seconds: 4));
+        req.followRedirects = true;
+        req.maxRedirects = 3;
+        final res = await req.close().timeout(const Duration(seconds: 4));
+        sw.stop();
+        final ok = res.statusCode >= 200 && res.statusCode < 400;
+        await res.drain();
+        return (prefix: prefix, latency: ok ? sw.elapsedMilliseconds : 99999, ok: ok);
+      } catch (_) {
+        return (prefix: prefix, latency: 99999, ok: false);
+      }
+    }
+
+    final candidatePrefixes = [
+      '', // 官方直连优先测试
+      'https://gh-proxy.com/',
+      'https://mirror.ghproxy.com/',
+      'https://ghfast.top/',
+    ];
+
+    try {
+      final githubResults = await Future.wait(candidatePrefixes.map(testGithubPrefix));
+      final directResult = githubResults.firstWhere((r) => r.prefix == '', orElse: () => (prefix: '', latency: 99999, ok: false));
+
+      if (directResult.ok && directResult.latency <= 2000) {
+        _isDirectNetwork = true;
+        _activeGithubPrefixMirrors = ['', ...candidatePrefixes.where((p) => p.isNotEmpty)];
+        onLog?.call('\x1b[32m[网络探测]\x1b[0m 检测到代理/直连网络畅通 (${directResult.latency}ms)，优先启用 GitHub 官方直连模式\r\n');
+      } else {
+        _isDirectNetwork = false;
+        final validMirrors = githubResults.where((r) => r.ok).toList()
+          ..sort((a, b) => a.latency.compareTo(b.latency));
+
+        if (validMirrors.isNotEmpty) {
+          final sortedPrefixes = validMirrors.map((m) => m.prefix).toList();
+          for (final p in candidatePrefixes) {
+            if (!sortedPrefixes.contains(p)) sortedPrefixes.add(p);
+          }
+          _activeGithubPrefixMirrors = sortedPrefixes;
+          final best = validMirrors.first;
+          final label = best.prefix.isEmpty ? '官方直连' : best.prefix;
+          onLog?.call('\x1b[32m[网络探测]\x1b[0m 选定最优 GitHub 加速节点: $label (${best.latency}ms)\r\n');
+        } else {
+          onLog?.call('\x1b[33m[网络探测]\x1b[0m 镜像测速均未响应，采用默认加速序列\r\n');
+        }
+      }
+    } catch (_) {}
+
+    // 2. 探测 PyPI 线路
+    Future<({String url, int latency, bool ok})> testPypi(String pypiUrl) async {
+      final sw = Stopwatch()..start();
+      try {
+        final uri = Uri.parse(pypiUrl);
+        final req = await client.getUrl(uri).timeout(const Duration(seconds: 4));
+        final res = await req.close().timeout(const Duration(seconds: 4));
+        sw.stop();
+        final ok = res.statusCode >= 200 && res.statusCode < 400;
+        await res.drain();
+        return (url: pypiUrl, latency: ok ? sw.elapsedMilliseconds : 99999, ok: ok);
+      } catch (_) {
+        return (url: pypiUrl, latency: 99999, ok: false);
+      }
+    }
+
+    final pypiCandidates = [
+      pypiPrimaryMirror, // 清华源
+      'https://mirrors.aliyun.com/pypi/simple/', // 阿里源
+      'https://pypi.org/simple/', // 官方源
+    ];
+
+    try {
+      final pypiResults = await Future.wait(pypiCandidates.map(testPypi));
+      final validPypi = pypiResults.where((r) => r.ok).toList()
+        ..sort((a, b) => a.latency.compareTo(b.latency));
+      if (validPypi.isNotEmpty) {
+        _activePypiMirror = validPypi.first.url;
+        onLog?.call('\x1b[32m[网络探测]\x1b[0m 选定最优 PyPI 软件源: $_activePypiMirror (${validPypi.first.latency}ms)\r\n');
+      }
+    } catch (_) {} finally {
+      client.close();
+    }
+  }
 }
 
 /// 本地服务端口常量

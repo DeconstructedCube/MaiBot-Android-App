@@ -171,10 +171,6 @@ class InstallerService {
             onLog?.call('\x1b[32m[系统]\x1b[0m 已清理临时安装包归档，释放存储空间\r\n');
           }
         } catch (_) {}
-
-        // 2. DNS 与系统环境注入
-        reportStage(InstallStage.configuringNetwork, '配置网络代理与系统参数...');
-        await _writeNetworkConfigs(onLog);
       } catch (e) {
         onLog?.call('\x1b[31m[错误]\x1b[0m 解压过程发生异常: $e\r\n');
         Log.e('解压过程发生异常: $e', tag: 'InstallerService');
@@ -182,7 +178,14 @@ class InstallerService {
       }
     }
 
-    // 2. 独立自愈校验系统依赖（git, curl, wget, sudo, aria2）
+    // 2. DNS 与系统环境注入（仅在必要时单次执行，绝不重复刷屏）
+    reportStage(InstallStage.configuringNetwork, '配置网络代理与系统参数...');
+    await _writeNetworkConfigs(onLog);
+
+    // 2.1 智能评估网络环境，测速优选镜像与直连线路（挂梯子优先直连，解决 ghfast.top 握手失败被拖累问题）
+    await MirrorRegistry.probeFastestMirrors(onLog: onLog);
+
+    // 2.2 独立自愈校验系统依赖（git, curl, wget, sudo, aria2, build-essential）
     final depSuccess = await _ensureSystemDependencies(
       (msg) => reportStage(InstallStage.checkingSystemDeps, msg),
       onLog,
@@ -219,7 +222,7 @@ class InstallerService {
         if (!success) return false;
       }
 
-      // 4.5 默认适配器克隆
+      // 4.5 默认适配器克隆（利用优选线路并在每次重试前清理残留目录）
       final pluginsDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins');
       final adapterDir = Directory('${pluginsDir.path}/MaiBot-Napcat-Adapter');
       final adapterMain = File('${adapterDir.path}/adapter.py');
@@ -236,22 +239,35 @@ class InstallerService {
           await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
         }
         reportStage(InstallStage.cloningAdapter, '安装默认适配器插件...');
-        for (final mirror in MirrorRegistry.githubPrefixMirrors) {
+        bool cloneSuccess = false;
+        for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
           final adapterUrl =
               '${mirror}https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git';
+          final label = mirror.isEmpty ? '官方直连' : mirror;
+          onLog?.call('\x1b[36m[适配器]\x1b[0m 正在从 $label 获取适配器插件...\r\n');
+          await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
           final res = await _runInProot(
             'git -c gc.auto=0 clone --depth=1 --branch main $adapterUrl /root/MaiBot/plugins/MaiBot-Napcat-Adapter',
             onLog: onLog,
+            timeout: const Duration(minutes: 3),
           );
-          if (res) break;
+          if (res) {
+            cloneSuccess = true;
+            break;
+          }
         }
+        if (!cloneSuccess) {
+          onLog?.call('\x1b[31m[错误]\x1b[0m 适配器插件安装失败，请检查网络连接\r\n');
+          return false;
+        }
+
         final adapterConfig = File('${adapterDir.path}/config.toml');
         if (await adapterConfig.exists()) {
           await adapterConfig.delete();
         }
       }
 
-      // 5. 同步 Python 依赖库
+      // 5. 同步 Python 依赖库（支持主备源自动切换与重试，彻底防止 jieba 等源码构建阶段卡死）
       final venvDir = Directory('${scripts.ubuntuPath}/root/MaiBot/.venv');
       final venvMarker = File('${scripts.ubuntuPath}/root/MaiBot/.venv_sync_ready');
       final bool hasVenv = await venvDir.exists() && await venvMarker.exists();
@@ -263,13 +279,19 @@ class InstallerService {
           InstallStage.syncingPythonEnv,
           '正在同步 Python 依赖库...',
         );
+        final pypiPrimary = MirrorRegistry.activePypiMirror;
         final uvSyncCmd = 'cd /root/MaiBot && '
             'if command -v script >/dev/null 2>&1; then '
-            '  script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv sync --color always --index-url ${MirrorRegistry.pypiPrimaryMirror}" /dev/null; '
+            '  script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv sync --color always --network-timeout 60 --index-url $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple" /dev/null; '
             'else '
-            '  /root/.local/bin/uv sync --color always --index-url ${MirrorRegistry.pypiPrimaryMirror}; '
+            '  /root/.local/bin/uv sync --color always --network-timeout 60 --index-url $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple; '
             'fi';
-        final success = await _runInProot(uvSyncCmd, onLog: onLog);
+        var success = await _runInProot(uvSyncCmd, onLog: onLog, timeout: const Duration(minutes: 8));
+        if (!success) {
+          onLog?.call('\x1b[33m[Python]\x1b[0m 主源同步受阻，自动切换至多镜像源与官方源双向重试...\r\n');
+          final fallbackCmd = 'cd /root/MaiBot && /root/.local/bin/uv sync --color always --network-timeout 90 --index-url https://pypi.org/simple --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
+          success = await _runInProot(fallbackCmd, onLog: onLog, timeout: const Duration(minutes: 8));
+        }
         if (!success) return false;
         await venvMarker.writeAsString('ready');
       }
@@ -314,7 +336,7 @@ class InstallerService {
         if (!await File(targetNapcatSh).exists() ||
             await File(targetNapcatSh).length() < 100) {
           bool downloaded = false;
-          for (final mirror in MirrorRegistry.githubPrefixMirrors) {
+          for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
             final url =
                 '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
             final res = await _runInProot(
@@ -370,7 +392,7 @@ class InstallerService {
       await Directory('${scripts.ubuntuPath}/var/lib/apt/lists/partial').create(recursive: true);
       await Directory(RuntimeEnvir.tmpPath).create(recursive: true);
 
-      onLog?.call('\x1b[32m[DNS]\x1b[0m 正在写入 resolv.conf...\r\n');
+      onLog?.call('\x1b[32m[DNS]\x1b[0m 正在配置容器 DNS 解析服务...\r\n');
       final resolvConf = File('${scripts.ubuntuPath}/etc/resolv.conf');
       final dnsLines =
           '${MirrorRegistry.dnsNameservers.map((ip) => 'nameserver $ip').join('\n')}\n';
@@ -446,7 +468,7 @@ class InstallerService {
       final pipConfig = File('${scripts.ubuntuPath}/etc/pip.conf');
       await pipConfig.writeAsString(
         '[global]\n'
-        'index-url = ${MirrorRegistry.pypiPrimaryMirror}\n'
+        'index-url = ${MirrorRegistry.activePypiMirror}\n'
         'extra-index-url = ${MirrorRegistry.pypiExtraMirrors}\n'
         'timeout = 30\n',
       );
@@ -463,7 +485,7 @@ class InstallerService {
       final uvToml = File('${uvConfigDir.path}/uv.toml');
       await uvToml.writeAsString(
         '[[index]]\n'
-        'url = "${MirrorRegistry.pypiPrimaryMirror}"\n'
+        'url = "${MirrorRegistry.activePypiMirror}"\n'
         'default = true\n',
       );
 
@@ -566,17 +588,20 @@ class InstallerService {
     }
 
     onProgress('正在检查并安装系统运行依赖...');
-    await _writeNetworkConfigs(onLog);
 
-    for (final mirror in MirrorRegistry.aptPortMirrors) {
-      await _writeSourcesList(mirror, onLog);
+    for (int i = 0; i < MirrorRegistry.aptPortMirrors.length; i++) {
+      final mirror = MirrorRegistry.aptPortMirrors[i];
+      if (i > 0) {
+        onLog?.call('\x1b[33m[APT]\x1b[0m 切换备用镜像源 -> $mirror\r\n');
+        await _writeSourcesList(mirror, null);
+      }
 
       const repairCmd =
           'mkdir -p /tmp /var/tmp /etc/ssl/certs && chmod 1777 /tmp /var/tmp; '
           'export TMPDIR=/tmp; export TEMP=/tmp; export TMP=/tmp; export DEBIAN_FRONTEND=noninteractive; '
           'dpkg --configure -a || true; '
           'apt-get --fix-broken install -y || true; '
-          'apt-get update && apt-get install -y --no-install-recommends sudo wget git curl ca-certificates aria2';
+          'apt-get update && apt-get install -y --no-install-recommends sudo wget git curl ca-certificates aria2 build-essential';
 
       final success = await _runInProot(
         repairCmd,
@@ -584,7 +609,6 @@ class InstallerService {
         timeout: const Duration(minutes: 5),
       );
       if (success && await gitBinary.exists() && await curlBinary.exists()) {
-        await _writeNetworkConfigs(onLog);
         return true;
       }
     }
@@ -598,13 +622,14 @@ class InstallerService {
         'https://github.com/astral-sh/uv/releases/download/0.9.9/uv-aarch64-unknown-linux-gnu.tar.gz';
 
     bool downloaded = false;
-    for (final mirror in MirrorRegistry.githubPrefixMirrors) {
+    for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
       final target = '$mirror$releaseUrl';
-      onLog?.call('\x1b[32m[UV]\x1b[0m 尝试从 ${mirror.isEmpty ? "官方直连" : mirror} 下载...\r\n');
+      final label = mirror.isEmpty ? '官方直连' : mirror;
+      onLog?.call('\x1b[32m[UV]\x1b[0m 尝试从 $label 下载...\r\n');
 
       if (onLog != null) {
         final process = await Process.start(
-            '${RuntimeEnvir.binPath}/busybox', ['wget', '-O', tmpArchive, target]);
+            '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
         process.stdout
             .transform(const Utf8Decoder(allowMalformed: true))
             .listen((data) => onLog(data.replaceAll('\n', '\r\n')));
@@ -618,7 +643,7 @@ class InstallerService {
         }
       } else {
         final res = await Process.run(
-            '${RuntimeEnvir.binPath}/busybox', ['wget', '-O', tmpArchive, target]);
+            '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
         if (res.exitCode == 0) {
           downloaded = true;
           break;
@@ -627,7 +652,7 @@ class InstallerService {
     }
 
     if (!downloaded) {
-      onLog?.call('\x1b[31m[UV]\x1b[0m 所有镜像源下载均失败！\r\n');
+      onLog?.call('\x1b[31m[UV]\x1b[0m 所有下载线路均未响应，请检查网络\r\n');
       return false;
     }
 
@@ -661,13 +686,15 @@ class InstallerService {
 
     final mirrors = customRepoUrl.isNotEmpty
         ? ['']
-        : MirrorRegistry.githubPrefixMirrors;
+        : MirrorRegistry.activeGithubPrefixMirrors;
     final tmpDir = '${scripts.ubuntuPath}/root/MaiBot_tmp';
 
     for (final mirror in mirrors) {
       final repo = customRepoUrl.isNotEmpty
           ? customRepoUrl
           : '${mirror}https://github.com/Mai-with-u/MaiBot.git';
+      final label = mirror.isEmpty ? '官方直连' : mirror;
+      onLog?.call('\x1b[36m[MaiBot]\x1b[0m 正在从 $label 获取 MaiBot 源码...\r\n');
       await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', tmpDir]);
 
       final success = await _runInProot(
@@ -675,6 +702,7 @@ class InstallerService {
         'cd /root/MaiBot_tmp && '
         'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"',
         onLog: onLog,
+        timeout: const Duration(minutes: 5),
       );
       if (success) {
         await Directory(tmpDir).rename('${scripts.ubuntuPath}/root/MaiBot');
