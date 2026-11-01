@@ -85,6 +85,7 @@ repomix-output.xml
 .metadata
 .trae/
 .claude/
+.omp/
 dev/
 
 # Node.js (if used for scripts/tools)

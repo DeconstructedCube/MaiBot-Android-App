@@ -158,10 +158,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     if (!InstallerService.isRootfsReady()) {
       lifecycle.beginExtraction();
       _syncProgressFromLifecycle();
-      await AssetsUtils.copyAssetToPath(
-        'assets/${Config.ubuntuFileName}',
-        '${RuntimeEnvir.homePath}/${Config.ubuntuFileName}',
-      );
     }
 
     final success = await InstallerService.runInstallPipeline(
@@ -173,9 +169,13 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         }
         _syncProgressFromLifecycle();
       },
-      onProgress: (msg) {
-        if (lifecycle.phase == AppPhase.uninitialized) {
+      onProgress: (msg, [ratio]) {
+        if (lifecycle.phase == AppPhase.extracting && ratio != null) {
+          lifecycle.updateExtractionProgress(ratio: ratio, message: msg);
+        } else if (lifecycle.phase == AppPhase.uninitialized) {
           lifecycle.beginConfiguration(message: msg);
+        } else {
+          lifecycle.updateStatus(msg);
         }
         _syncProgressFromLifecycle();
       },
@@ -222,6 +222,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     super.onInit();
 
     terminalTabManager = TerminalTabManager();
+    terminalTabManager.initializeFixedTabs(terminal, napcatShowTerminal);
 
     maibotClient = SocketStreamClient(
       port: Ports.maibotPtySocket,
@@ -252,37 +253,38 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       setHideFromRecents(true);
     }
 
-    Future.delayed(Duration.zero, () async {
-      if (privacySetting.get() == null) {
-        await Get.to(PrivacyAgreePage(
-          onAgreeTap: () {
-            privacySetting.set(true);
-            Get.back();
-          },
-        ));
-      }
-
-      if (Platform.isAndroid) {
-        final notifStatus = await Permission.notification.status;
-        final bool hasNotif = notifStatus.isGranted;
-
-        if (!hasNotif) {
-          final completer = Completer<void>();
-          await Get.to(PermissionRequestPage(
-            onPermissionsGranted: () {
-              Get.back();
-              if (!completer.isCompleted) completer.complete();
-            },
-          ));
-          await completer.future;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (privacySetting.get() != true) {
+          return;
         }
+
+        if (Platform.isAndroid) {
+          try {
+            final notifStatus = await Permission.notification.status;
+            if (!notifStatus.isGranted) {
+              await Get.to(() => PermissionRequestPage(
+                onPermissionsGranted: () {
+                  Get.back();
+                },
+              ));
+            }
+          } catch (e) {
+            Log.w('通知权限检查跳过: $e', tag: 'HomeController');
+          }
+        }
+      } catch (e) {
+        Log.w('启动前置权限/隐私确认异常: $e', tag: 'HomeController');
       }
 
-      await loadMaiBot();
-
-      Future.delayed(const Duration(milliseconds: 500), () {
-        terminalTabManager.initializeFixedTabs(terminal, napcatShowTerminal);
-      });
+      try {
+        await loadMaiBot();
+      } catch (e, stack) {
+        Log.e('loadMaiBot 启动致命异常: $e\n$stack', tag: 'HomeController');
+        terminal.write('\x1b[31m[致命错误]\x1b[0m 后台初始化异常: $e\r\n');
+        lifecycle.fail('后台启动异常: $e');
+        _syncProgressFromLifecycle();
+      }
     });
 
     WidgetsBinding.instance.addObserver(this);

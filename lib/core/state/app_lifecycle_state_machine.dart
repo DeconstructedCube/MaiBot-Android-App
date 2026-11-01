@@ -62,6 +62,28 @@ class AppLifecycleStateMachine {
     _recomputePhase();
   }
 
+  /// 上报解压根文件系统实时进度 (ratio: 0.0 ~ 1.0)
+  void updateExtractionProgress({required double ratio, String? message}) {
+    _errorMessage = null;
+    _installStage = InstallStage.extractingRootfs;
+    if (message != null && message.isNotEmpty) {
+      _statusMessage = message;
+    }
+    // 解压阶段进度权重平滑映射于 0.05 ~ 0.22 之间
+    final computed = (0.05 + ratio.clamp(0.0, 1.0) * 0.17);
+    if (computed > _progress) {
+      _progress = computed;
+    }
+    _recomputePhase();
+  }
+
+  /// 仅更新状态描述文本
+  void updateStatus(String message) {
+    if (message.isNotEmpty) {
+      _statusMessage = message;
+    }
+  }
+
   /// 上报进入安装与环境配置子阶段
   void beginConfiguration({InstallStage? stage, String? message}) {
     _errorMessage = null;

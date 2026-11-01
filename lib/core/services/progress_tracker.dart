@@ -29,7 +29,10 @@ class ProgressTracker {
     final prevDescription = currentProgress;
     progress = normalizedProgress.clamp(0.0, 1.0);
     currentProgress = description;
-    if (description.isNotEmpty && description != prevDescription) {
+    if (description.isNotEmpty &&
+        description != prevDescription &&
+        !description.contains('%') &&
+        !description.contains('已释放')) {
       terminal?.writeProgress(description);
     }
     onChanged();

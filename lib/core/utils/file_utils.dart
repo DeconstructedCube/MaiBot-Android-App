@@ -52,7 +52,7 @@ Directory getMaiBotBackupDirectory() {
 
 extension TerminalExt on Terminal {
   void writeProgress(String data) {
-    write('\x1b[31m- $data\x1b[0m\n\r');
+    write('\x1b[31m- $data\x1b[0m\r\n');
   }
 
   /// 提取终端当前缓冲区的纯文本内容

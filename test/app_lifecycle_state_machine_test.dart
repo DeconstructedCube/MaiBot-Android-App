@@ -28,6 +28,25 @@ void main() {
       expect(sm.phase, AppPhase.configuring);
       expect(sm.progress, InstallStage.syncingPythonEnv.progressWeight);
     });
+    test('updates extraction progress dynamically with ratio', () {
+      final sm = AppLifecycleStateMachine();
+      sm.beginExtraction();
+      expect(sm.phase, AppPhase.extracting);
+
+      sm.updateExtractionProgress(ratio: 0.5, message: '解压中 50%');
+      expect(sm.phase, AppPhase.extracting);
+      expect(sm.statusMessage, '解压中 50%');
+      expect(sm.progress, closeTo(0.135, 0.01));
+
+      sm.updateExtractionProgress(ratio: 1.0, message: '解压完成');
+      expect(sm.phase, AppPhase.extracting);
+      expect(sm.statusMessage, '解压完成');
+      expect(sm.progress, closeTo(0.22, 0.01));
+
+      sm.updateStatus('准备配置系统参数...');
+      expect(sm.statusMessage, '准备配置系统参数...');
+    });
+
 
     test('reaches ready only when both portsReady and loginReady are true', () {
       final sm = AppLifecycleStateMachine();

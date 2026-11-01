@@ -68,7 +68,9 @@ class MaiBot extends StatelessWidget {
               Locale('zh', 'CN'),
               Locale('en', 'US'),
             ],
-            initialRoute: AppRoutes.terminal,
+            initialRoute: 'privacy'.setting.get() == true
+                ? AppRoutes.terminal
+                : AppRoutes.privacy,
             getPages: AppRoutes.routes,
             builder: (context, child) {
               return ViewMetric(

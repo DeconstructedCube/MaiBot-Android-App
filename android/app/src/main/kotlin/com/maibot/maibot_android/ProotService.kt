@@ -45,7 +45,7 @@ enum class ServiceState(val value: String) {
 /**
  * 固定容量环形字节缓冲区（零碎块分配，常数时间写入与快照导出）
  */
-class ByteRingBuffer(private val capacity: Int = 65536) {
+class ByteRingBuffer(private val capacity: Int = 262144) {
     private val buffer = ByteArray(capacity)
     private var head = 0
     private var size = 0
@@ -472,7 +472,8 @@ class ProotService : Service() {
                 Runtime.getRuntime().exec(
                     arrayOf(
                         "$binPath/busybox", "killall", "-9",
-                        "proot", "qq", "python", "python3", "node", "bash", "sh", "crashpad_handler"
+                        "proot", "qq", "python", "python3", "node", "bash", "sh",
+                        "crashpad_handler", "Xvfb", "xvfb-run", "uv", "uvx"
                     )
                 ).waitFor()
             } catch (_: Exception) {}
@@ -601,7 +602,7 @@ class ProotService : Service() {
         private var process: Process? = null
         private var serverSocket: ServerSocket? = null
         private val clients = CopyOnWriteArrayList<ClientSession>()
-        private val historyBuffer = ByteRingBuffer(65536)
+        private val historyBuffer = ByteRingBuffer(262144)
 
         private var restartCount = 0
         private var restartJob: Job? = null
@@ -754,10 +755,12 @@ class ProotService : Service() {
                     // Fake sysdata bindings to prevent Python/uv crashes on restricted Android /proc
                     val fakeProcs = arrayOf(
                         ".loadavg", ".stat", ".uptime", ".version", ".vmstat",
+                        ".meminfo", ".cpuinfo",
                         ".sysctl_entry_cap_last_cap", ".sysctl_inotify_max_user_watches"
                     )
                     val targetProcs = arrayOf(
                         "/proc/loadavg", "/proc/stat", "/proc/uptime", "/proc/version", "/proc/vmstat",
+                        "/proc/meminfo", "/proc/cpuinfo",
                         "/proc/sys/kernel/cap_last_cap", "/proc/sys/fs/inotify/max_user_watches"
                     )
                     for (i in fakeProcs.indices) {

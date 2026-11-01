@@ -33,6 +33,8 @@ class ProotRunner {
     ['.uptime', '/proc/uptime'],
     ['.version', '/proc/version'],
     ['.vmstat', '/proc/vmstat'],
+    ['.meminfo', '/proc/meminfo'],
+    ['.cpuinfo', '/proc/cpuinfo'],
     ['.sysctl_entry_cap_last_cap', '/proc/sys/kernel/cap_last_cap'],
     ['.sysctl_inotify_max_user_watches', '/proc/sys/fs/inotify/max_user_watches'],
   ];

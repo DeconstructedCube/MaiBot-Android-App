@@ -39,6 +39,56 @@ class _WebViewPageState extends State<WebViewPage> {
   Worker? _customWebViewsWorker;
   Worker? _napCatTokenWorker;
 
+  void _switchTab(int newIndex) {
+    if (_currentIndex == newIndex) return;
+    setState(() {
+      _currentIndex = newIndex;
+    });
+    _updateWebViewPauseState(newIndex);
+  }
+
+  /// 基于 Tab 标签切换控制 WebView 休眠，严格与输入法（IME）弹窗解耦，杜绝输入法被误判切后台导致的打字卡顿
+  void _updateWebViewPauseState(int targetIndex) {
+    try {
+      final bool napCatEnabled =
+          homeController.napcatController.napCatWebUiEnabledRx.value;
+      final int napCatIndex = napCatEnabled ? 1 : -1;
+
+      // MaiBot 控制台 (索引 0)
+      if (_maiBotInitialized) {
+        if (targetIndex == 0) {
+          _maiBotController.resume();
+        } else {
+          _maiBotController.pause();
+        }
+      }
+
+      // NapCat 控制台
+      if (napCatIndex > 0) {
+        if (targetIndex == napCatIndex) {
+          _napCatController.resume();
+        } else {
+          _napCatController.pause();
+        }
+      }
+
+      // 自定义 WebView 列表
+      final customWebViews = homeController.webviewController.customWebViews;
+      for (int i = 0; i < customWebViews.length; i++) {
+        final pageIndex = i + (napCatEnabled ? 2 : 1);
+        final url = customWebViews[i]['url'] ?? '';
+        final ctrl = _customControllers[url];
+        if (ctrl != null) {
+          if (targetIndex == pageIndex) {
+            ctrl.resume();
+          } else {
+            ctrl.pause();
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -455,9 +505,7 @@ class _WebViewPageState extends State<WebViewPage> {
 
               // 1. 如果当前不是 MaiBot 主控制台标签页，按返回键优先返回主标签页
               if (_currentIndex != 0) {
-                setState(() {
-                  _currentIndex = 0;
-                });
+                _switchTab(0);
                 return;
               }
 
@@ -505,9 +553,7 @@ class _WebViewPageState extends State<WebViewPage> {
                     maiBotController: _maiBotController,
                     napCatController: _napCatController,
                     onNavigate: (index) {
-                      setState(() {
-                        _currentIndex = index;
-                      });
+                      _switchTab(index);
                     },
                   ),
                 ],
@@ -516,9 +562,7 @@ class _WebViewPageState extends State<WebViewPage> {
             bottomNavigationBar: WebViewBottomNavBar(
               currentIndex: validCurrentIndex,
               onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
+                _switchTab(index);
               },
             ),
           ),

@@ -29,8 +29,10 @@ class InstallerService {
     return false;
   }
 
+  static const int totalRootfsFiles = 12684;
+
   static Future<bool> runInstallPipeline({
-    required Function(String) onProgress,
+    required void Function(String message, [double? ratio]) onProgress,
     void Function(InstallStage stage, String message)? onStage,
     Function(String)? onLog,
   }) async {
@@ -57,26 +59,64 @@ class InstallerService {
       reportStage(InstallStage.extractingRootfs, '正在解压 Ubuntu 根文件系统...');
       try {
         final archivePath = '${RuntimeEnvir.homePath}/${Config.ubuntuFileName}';
+        final archiveFile = File(archivePath);
         final targetPath = '${scripts.prootDistroPath}/installed-rootfs';
 
         await Directory(targetPath).create(recursive: true);
 
+        // 1.1 校验或从应用 assets 释放镜像归档
+        if (!await archiveFile.exists() || await archiveFile.length() < 1000000) {
+          onLog?.call('\x1b[36m[系统]\x1b[0m 正在从应用安装包准备 Ubuntu 镜像归档 (62MB)...\r\n');
+          onProgress('正在释放 Ubuntu 镜像归档 (62MB)...', 0.0);
+          try {
+            final ByteData byteData = await rootBundle.load('assets/${Config.ubuntuFileName}');
+            final Uint8List picBytes = byteData.buffer.asUint8List(
+              byteData.offsetInBytes,
+              byteData.lengthInBytes,
+            );
+            await archiveFile.parent.create(recursive: true);
+            await archiveFile.writeAsBytes(picBytes, flush: true);
+            final mb = (picBytes.length / (1024 * 1024)).toStringAsFixed(1);
+            onLog?.call('\x1b[32m[系统]\x1b[0m 镜像归档释放完成，大小: ${mb}MB\r\n');
+          } catch (e) {
+            onLog?.call('\x1b[31m[错误]\x1b[0m 无法从 assets 读取镜像归档: $e\r\n');
+            return false;
+          }
+        }
+
+        // 1.2 执行 tar 解压并实时流式输出日志与平滑进度
         final args = ['tar', '-xJvf', archivePath, '-C', targetPath];
+        onLog?.call('\x1b[36m[解压]\x1b[0m 正在解压 Ubuntu 根文件系统 (共 $totalRootfsFiles 个文件)...\r\n');
+
+        final busyboxPath = '${RuntimeEnvir.binPath}/busybox';
         if (onLog != null) {
-          final process = await Process.start('${RuntimeEnvir.binPath}/busybox', args);
+          final process = await Process.start(busyboxPath, args);
           int extractedFiles = 0;
+          int lastLoggedPct = 0;
+
           process.stdout
               .transform(const Utf8Decoder(allowMalformed: true))
               .transform(const LineSplitter())
-              .listen((line) {
+              .listen((_) {
             extractedFiles++;
-            if (extractedFiles % 300 == 0) {
-              // 采用渐近式平滑估算展示进度，不再受限于硬编码文件数
-              final double ratio = extractedFiles / (extractedFiles + 3200.0);
-              final pct = (ratio * 99.5).clamp(1.0, 99.5).toStringAsFixed(1);
-              onLog('\x1b[32m[解压进度]\x1b[0m $pct% (已释放 $extractedFiles 个文件)\r\n');
+            final double ratio = (extractedFiles / totalRootfsFiles).clamp(0.0, 1.0);
+            final int currentPctInt = (ratio * 100).toInt();
+
+            // 主看板平滑更新进度（每 100 个文件更新一次，内存操作不写终端）
+            if (extractedFiles % 100 == 0 || extractedFiles == totalRootfsFiles) {
+              final String pct = (ratio * 100).toStringAsFixed(1);
+              onProgress('正在解压 Ubuntu 根文件系统 ($pct%, $extractedFiles/$totalRootfsFiles)...', ratio);
+            }
+
+            // 终端仅输出阶段性里程碑进度（每 10% 输出一行，杜绝万级文件名刷屏）
+            if ((currentPctInt > lastLoggedPct && currentPctInt % 10 == 0) ||
+                extractedFiles == totalRootfsFiles) {
+              lastLoggedPct = currentPctInt;
+              final String pct = (ratio * 100).toStringAsFixed(1);
+              onLog('\x1b[32m[解压进度]\x1b[0m $pct% ($extractedFiles/$totalRootfsFiles)\r\n');
             }
           });
+
           process.stderr
               .transform(const Utf8Decoder(allowMalformed: true))
               .transform(const LineSplitter())
@@ -84,26 +124,51 @@ class InstallerService {
             if (!line.contains('chown') &&
                 !line.contains('mknod') &&
                 !line.contains('Operation not permitted')) {
-              onLog('\x1b[31m[tar]\x1b[0m $line\r\n');
+              onLog('\x1b[31m[tar 警告]\x1b[0m $line\r\n');
             }
           });
-          await process.exitCode;
-          onLog('\x1b[32m[解压进度]\x1b[0m 100.0% (共释放 $extractedFiles 个文件)\r\n');
+
+          final exitCode = await process.exitCode;
+          if (exitCode != 0) {
+            onLog('\x1b[31m[错误]\x1b[0m tar 解压异常终止，退出代码: $exitCode\r\n');
+            return false;
+          }
+          onLog('\x1b[32m[解压完成]\x1b[0m 100.0% (共释放 $extractedFiles 个文件)\r\n');
+          onProgress('Ubuntu 根文件系统解压完成', 1.0);
         } else {
-          await Process.run('${RuntimeEnvir.binPath}/busybox', args);
+          final res = await Process.run(busyboxPath, args);
+          if (res.exitCode != 0) {
+            return false;
+          }
         }
 
+        // 1.3 目录重命名与完整性校验
         final extractedDir = Directory('$targetPath/${scripts.ubuntuName}');
+        final targetDir = Directory(scripts.ubuntuPath);
+        if (await targetDir.exists()) {
+          try {
+            await targetDir.delete(recursive: true);
+          } catch (_) {}
+        }
         if (await extractedDir.exists()) {
           await extractedDir.rename(scripts.ubuntuPath);
+          onLog?.call('\x1b[32m[系统]\x1b[0m 根文件系统就位 -> ${scripts.ubuntuPath}\r\n');
+        }
+
+        final bashCheck = File('${scripts.ubuntuPath}/bin/bash');
+        if (!await bashCheck.exists()) {
+          onLog?.call('\x1b[31m[错误]\x1b[0m 校验失败: 未在 ${scripts.ubuntuPath} 找到 bin/bash\r\n');
+          return false;
         }
 
         await rootfsMarker.writeAsString('ready');
+        onLog?.call('\x1b[32m[系统]\x1b[0m 根文件系统校验通过，标记已写入 (.rootfs_ready)\r\n');
+
+        // 1.4 清理 62MB 安装包归档
         try {
-          final archiveFile = File(archivePath);
           if (await archiveFile.exists()) {
             await archiveFile.delete();
-            onLog?.call('\x1b[32m[系统]\x1b[0m 已清理安装包归档，释放存储空间\r\n');
+            onLog?.call('\x1b[32m[系统]\x1b[0m 已清理临时安装包归档，释放存储空间\r\n');
           }
         } catch (_) {}
 
@@ -111,6 +176,7 @@ class InstallerService {
         reportStage(InstallStage.configuringNetwork, '配置网络代理与系统参数...');
         await _writeNetworkConfigs(onLog);
       } catch (e) {
+        onLog?.call('\x1b[31m[错误]\x1b[0m 解压过程发生异常: $e\r\n');
         Log.e('解压过程发生异常: $e', tag: 'InstallerService');
         return false;
       }
@@ -420,7 +486,38 @@ class InstallerService {
       if (!await vmstat.exists()) {
         await vmstat.writeAsString('nr_free_pages 100000\n');
       }
-
+      final meminfo = File('${procDir.path}/.meminfo');
+      if (!await meminfo.exists()) {
+        await meminfo.writeAsString(
+          'MemTotal:        8192000 kB\n'
+          'MemFree:         4096000 kB\n'
+          'MemAvailable:    5120000 kB\n'
+          'Buffers:          200000 kB\n'
+          'Cached:          2000000 kB\n'
+          'SwapTotal:             0 kB\n'
+          'SwapFree:              0 kB\n',
+        );
+      }
+      final version = File('${procDir.path}/.version');
+      if (!await version.exists()) {
+        await version.writeAsString(
+          'Linux version 5.15.0-maibot (android@container) (gcc 11.2.0) #1 SMP PREEMPT\n',
+        );
+      }
+      final cpuinfo = File('${procDir.path}/.cpuinfo');
+      if (!await cpuinfo.exists()) {
+        await cpuinfo.writeAsString(
+          'processor\t: 0\n'
+          'BogoMIPS\t: 38.40\n'
+          'Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp\n'
+          'CPU implementer\t: 0x41\n'
+          'CPU architecture: 8\n'
+          'CPU variant\t: 0x1\n'
+          'CPU part\t: 0xd05\n'
+          'CPU revision\t: 0\n\n'
+          'Hardware\t: MaiBot Android Virtual ARM64\n',
+        );
+      }
       await _writeSourcesList(MirrorRegistry.aptPortMirrors.first, onLog);
     } catch (e) {
       Log.e('Failed to write network configs: $e', tag: 'InstallerService');
