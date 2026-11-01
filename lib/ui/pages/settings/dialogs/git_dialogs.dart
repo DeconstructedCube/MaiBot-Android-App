@@ -55,9 +55,10 @@ Future<bool> _runGitTaskWithProgressDialog({
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
 
-        return PopScope(
-          canPop: false,
-          child: Dialog(
+        return Obx(
+          () => PopScope(
+            canPop: isDone.value,
+            child: Dialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520, maxHeight: 520),
@@ -138,12 +139,12 @@ Future<bool> _runGitTaskWithProgressDialog({
                         children: [
                           if (!isSuccess.value)
                             TextButton(
-                              onPressed: () => Get.back(result: false),
+                              onPressed: () => Navigator.of(context).pop(false),
                               child: const Text('关闭'),
                             ),
                           if (isSuccess.value)
                             FilledButton.icon(
-                              onPressed: () => Get.back(result: true),
+                              onPressed: () => Navigator.of(context).pop(true),
                               icon: const Icon(Icons.check_rounded, size: 18),
                               label: const Text('完成'),
                             ),
@@ -154,6 +155,7 @@ Future<bool> _runGitTaskWithProgressDialog({
                 ),
               ),
             ),
+          ),
           ),
         );
       },

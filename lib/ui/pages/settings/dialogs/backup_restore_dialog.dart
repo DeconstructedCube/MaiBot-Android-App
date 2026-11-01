@@ -43,7 +43,9 @@ Future<void> showBackupRestoreDialog({
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
         final currentFile = backups[selectedBackupIndex];
-        return AlertDialog(
+        return PopScope(
+          canPop: !isRestoring,
+          child: AlertDialog(
           backgroundColor: colorScheme.surfaceContainerHigh,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           title: Row(
@@ -340,7 +342,7 @@ Future<void> showBackupRestoreDialog({
               : [
                   TextButton(
                     onPressed: () {
-                      Get.back();
+                      Navigator.of(context).pop();
                       onCompleted?.call();
                     },
                     child: Text(isInitialInstall ? '跳过' : '取消'),
@@ -361,8 +363,10 @@ Future<void> showBackupRestoreDialog({
                           restartService: isInitialInstall,
                           showSnackbar: false,
                         );
-                        if (Get.isDialogOpen == true) {
-                          Get.back();
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                        } else if (Get.isDialogOpen == true) {
+                          Get.back(canPop: false);
                         }
                         if (success) {
                           if (!isInitialInstall) {
@@ -402,6 +406,7 @@ Future<void> showBackupRestoreDialog({
                     },
                   ),
                 ],
+          ),
         );
       },
     ),

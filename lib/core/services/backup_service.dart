@@ -148,40 +148,52 @@ class BackupService {
     final backupFileName = 'MaiBot-backup-$timestamp.tar.gz';
     final backupPath = '${backupDir.path}/$backupFileName';
 
-    bool dialogShown = false;
+    BuildContext? dialogContext;
+    final canCloseDialog = false.obs;
     if (showLoadingDialog) {
-      Get.dialog(
-        const PopScope(
-          canPop: false,
-          child: Center(
-            child: Card(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(16))),
-              child: Padding(
-                padding: EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('正在打包备份数据...', style: TextStyle(fontSize: 14)),
-                  ],
+      unawaited(
+        Get.dialog(
+          Builder(
+            builder: (ctx) {
+              dialogContext = ctx;
+              return Obx(
+                () => PopScope(
+                  canPop: canCloseDialog.value,
+                  child: const Center(
+                    child: Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(16)),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(24.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('正在打包备份数据...', style: TextStyle(fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
+          barrierDismissible: false,
         ),
-        barrierDismissible: false,
       );
-      dialogShown = true;
     }
 
     void dismissDialog() {
-      if (dialogShown) {
-        if (Get.isDialogOpen == true) {
-          Get.back();
-        }
-        dialogShown = false;
+      canCloseDialog.value = true;
+      final ctx = dialogContext;
+      dialogContext = null;
+      if (ctx != null && ctx.mounted) {
+        Navigator.of(ctx).pop();
+      } else if (Get.isDialogOpen == true) {
+        Get.back(canPop: false);
       }
     }
 

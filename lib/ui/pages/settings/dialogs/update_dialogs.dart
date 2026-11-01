@@ -18,16 +18,33 @@ class UpdateChecker {
 
   /// 检查更新：拉取最新版本、比较版本号并展示相应对话框
   Future<void> checkForUpdates() async {
+    BuildContext? loadingDialogContext;
+    void dismissLoadingDialog() {
+      final ctx = loadingDialogContext;
+      loadingDialogContext = null;
+      if (ctx != null && ctx.mounted) {
+        Navigator.of(ctx).pop();
+      } else if (Get.isDialogOpen == true) {
+        Get.back(canPop: false);
+      }
+    }
+
     try {
       // 每次检查更新时重置原始URL
       _originalDownloadUrl = null;
 
       // 显示加载提示
-      Get.dialog(
-        const Center(child: CircularProgressIndicator()),
-        barrierDismissible: false,
+      unawaited(
+        Get.dialog(
+          Builder(
+            builder: (ctx) {
+              loadingDialogContext = ctx;
+              return const Center(child: CircularProgressIndicator());
+            },
+          ),
+          barrierDismissible: false,
+        ),
       );
-
       // 获取当前版本
       final currentVersion = await getAppVersion();
 
@@ -57,7 +74,7 @@ class UpdateChecker {
         }
       }
 
-      Get.back(); // 关闭加载提示
+      dismissLoadingDialog(); // 关闭加载提示
 
       if (releaseData == null) {
         Get.snackbar(
@@ -88,7 +105,7 @@ class UpdateChecker {
         );
       }
     } catch (e) {
-      Get.back(); // 关闭加载提示
+      dismissLoadingDialog(); // 关闭加载提示
       Log.e('检查更新失败: $e', tag: 'MaiBot');
       Get.snackbar(
         '检查失败',

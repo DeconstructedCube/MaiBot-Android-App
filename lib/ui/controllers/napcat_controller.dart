@@ -19,8 +19,20 @@ class NapcatController extends GetxController {
   final RxBool napCatWebUiEnabledRx = false.obs;
 
   Dialog? _qrcodeDialog;
+  BuildContext? _qrcodeDialogContext;
   bool isQrcodeProcessed = false;
 
+  void _dismissQrcodeDialog() {
+    final ctx = _qrcodeDialogContext;
+    _qrcodeDialogContext = null;
+    _qrcodeDialog = null;
+    _isQrcodeShowing.value = false;
+    if (ctx != null && ctx.mounted) {
+      Navigator.of(ctx).pop();
+    } else if (Get.isDialogOpen == true) {
+      Get.back(canPop: false);
+    }
+  }
   bool get isQrcodeShowing => _isQrcodeShowing.value;
 
   @override
@@ -119,9 +131,7 @@ class NapcatController extends GetxController {
         case NapcatLogEventType.autoLoginSuccess:
           isQrcodeProcessed = true;
           if (_isQrcodeShowing.value && _qrcodeDialog != null) {
-            Get.back();
-            _isQrcodeShowing.value = false;
-            _qrcodeDialog = null;
+            _dismissQrcodeDialog();
           }
           Log.i('检测到 NapCat 自动快速登录成功，准备进入主页面...', tag: 'MaiBot');
           break;
@@ -148,9 +158,7 @@ class NapcatController extends GetxController {
           isQrcodeProcessed = true;
           if (_isQrcodeShowing.value) {
             if (_qrcodeDialog != null) {
-              Get.back();
-              _isQrcodeShowing.value = false;
-              _qrcodeDialog = null;
+              _dismissQrcodeDialog();
             }
             _checkAndPromptSaveQQ();
           }
@@ -158,11 +166,7 @@ class NapcatController extends GetxController {
 
         case NapcatLogEventType.loginError:
           if (_isQrcodeShowing.value) {
-            if (_qrcodeDialog != null) {
-              Get.back();
-            }
-            _isQrcodeShowing.value = false;
-            _qrcodeDialog = null;
+            _dismissQrcodeDialog();
 
             Get.snackbar(
               'NapCat 登录失败',
@@ -199,9 +203,9 @@ class NapcatController extends GetxController {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Builder(
         builder: (context) {
+          _qrcodeDialogContext = context;
           final theme = Theme.of(context);
           final colorScheme = theme.colorScheme;
-
           return Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
             child: Column(
@@ -272,6 +276,7 @@ class NapcatController extends GetxController {
     if (isQrcodeProcessed) {
       _isQrcodeShowing.value = false;
       _qrcodeDialog = null;
+      _qrcodeDialogContext = null;
       return;
     }
 
@@ -282,6 +287,7 @@ class NapcatController extends GetxController {
 
     _isQrcodeShowing.value = false;
     _qrcodeDialog = null;
+    _qrcodeDialogContext = null;
   }
 
   void handleMaibotOutput(String event) {

@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -157,28 +157,49 @@ class MaintenanceActions {
     );
 
     if (confirm != true) return;
-
-    Get.dialog(
-      const PopScope(
-        canPop: false,
-        child: Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('正在暂存配置并清理 NapCat...', style: TextStyle(fontSize: 14)),
-                ],
+    BuildContext? dialogContext;
+    final canCloseDialog = false.obs;
+    unawaited(
+      Get.dialog(
+        Builder(
+          builder: (ctx) {
+            dialogContext = ctx;
+            return Obx(
+              () => PopScope(
+                canPop: canCloseDialog.value,
+                child: const Center(
+                  child: Card(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('正在暂存配置并清理 NapCat...', style: TextStyle(fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
+        barrierDismissible: false,
       ),
-      barrierDismissible: false,
     );
+
+    void dismissLoadingDialog() {
+      canCloseDialog.value = true;
+      final ctx = dialogContext;
+      dialogContext = null;
+      if (ctx != null && ctx.mounted) {
+        Navigator.of(ctx).pop();
+      } else if (Get.isDialogOpen == true) {
+        Get.back(canPop: false);
+      }
+    }
 
     try {
       final success = await BackendProcessManager.runMaintenanceTransaction(
@@ -188,10 +209,7 @@ class MaintenanceActions {
         },
       );
 
-      if (Get.isDialogOpen == true) {
-        Get.back();
-      }
-
+      dismissLoadingDialog();
       if (success) {
         Get.snackbar(
           '清理完成',
@@ -213,9 +231,7 @@ class MaintenanceActions {
         );
       }
     } catch (e) {
-      if (Get.isDialogOpen == true) {
-        Get.back();
-      }
+      dismissLoadingDialog();
       Log.e('重新安装 NapCat 失败: $e', tag: 'MaiBot');
       Get.snackbar(
         '操作失败',

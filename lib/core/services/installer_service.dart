@@ -28,6 +28,35 @@ class InstallerService {
     }
     return false;
   }
+  /// 检查容器、核心组件、MaiBot、NapCat 以及 Python 虚拟环境是否已经全量就绪
+  static bool isEnvironmentFullyInstalled() {
+    if (!isRootfsReady()) return false;
+
+    final uvExecutable = File('${scripts.ubuntuPath}/root/.local/bin/uv');
+    final maibotDir = Directory('${scripts.ubuntuPath}/root/MaiBot');
+    final botPy = File('${maibotDir.path}/bot.py');
+    final pyproject = File('${maibotDir.path}/pyproject.toml');
+    final adapterDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins/MaiBot-Napcat-Adapter');
+    final venvDir = Directory('${scripts.ubuntuPath}/root/MaiBot/.venv');
+    final venvMarker = File('${scripts.ubuntuPath}/root/MaiBot/.venv_sync_ready');
+    final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
+    final napcatEntry = File('${napcatDir.path}/napcat.mjs');
+    final qqBinary = File('${scripts.ubuntuPath}/opt/QQ/qq');
+    final launcherSh = File('${scripts.ubuntuPath}/root/launcher.sh');
+
+    return uvExecutable.existsSync() &&
+        maibotDir.existsSync() &&
+        botPy.existsSync() &&
+        pyproject.existsSync() &&
+        adapterDir.existsSync() &&
+        venvDir.existsSync() &&
+        venvMarker.existsSync() &&
+        napcatDir.existsSync() &&
+        napcatEntry.existsSync() &&
+        qqBinary.existsSync() &&
+        launcherSh.existsSync();
+  }
+
 
   static const int totalRootfsFiles = 12684;
 
@@ -49,6 +78,12 @@ class InstallerService {
     final bool isExtracted = isRootfsReady();
 
     lastInstallWasFresh = !isExtracted;
+    // 核心优化：若系统已经全量就绪（非初次安装且所有核心组件完好），直接跳过冗余的网络测速与依赖检查
+    if (isExtracted && isEnvironmentFullyInstalled()) {
+      reportStage(InstallStage.completed, '准备启动服务...');
+      return true;
+    }
+
 
     if (!isExtracted) {
       if (await ubuntuDir.exists()) {
