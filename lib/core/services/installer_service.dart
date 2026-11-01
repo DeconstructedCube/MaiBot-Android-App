@@ -294,7 +294,7 @@ class InstallerService {
         await venvMarker.writeAsString('ready');
       }
 
-      // 6. 安装 NapCat
+      // 6. 安装 NapCat（直接使用 Fork 维护仓库安装脚本）
       final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
       final qqBinary = File('${scripts.ubuntuPath}/opt/QQ/qq');
       final launcherSh = File('${scripts.ubuntuPath}/root/launcher.sh');
@@ -327,25 +327,26 @@ class InstallerService {
           'dpkg --configure -a || true && apt-get --fix-broken install -y',
           onLog: onLog,
         );
-        final targetNapcatSh = '${scripts.ubuntuPath}/root/napcat.sh';
-        await _deployAssetScript('assets/scripts/napcat_install.sh', targetNapcatSh);
 
-        if (!await File(targetNapcatSh).exists() ||
-            await File(targetNapcatSh).length() < 100) {
-          bool downloaded = false;
-          for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
-            final url =
-                '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
-            final res = await _runInProot(
-              'curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
-              onLog: onLog,
-            );
-            if (res) {
-              downloaded = true;
-              break;
-            }
+        bool downloaded = false;
+        for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
+          final url =
+              '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
+          final label = mirror.isEmpty ? '官方源' : mirror;
+          onLog?.call('\x1b[36m[NapCat]\x1b[0m 正在从 $label 获取安装脚本...\r\n');
+          final res = await _runInProot(
+            'curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
+            onLog: onLog,
+            timeout: const Duration(seconds: 40),
+          );
+          if (res) {
+            downloaded = true;
+            break;
           }
-          if (!downloaded) return false;
+        }
+        if (!downloaded) {
+          onLog?.call('\x1b[31m[错误]\x1b[0m 获取 NapCat 安装脚本失败，请检查网络\r\n');
+          return false;
         }
 
         final success = await _runInProot('bash /root/napcat.sh', onLog: onLog);
