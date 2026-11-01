@@ -54,6 +54,11 @@ class ConfigService {
               final existingToken = firstWs['token']?.toString() ?? '';
               if (existingToken.isNotEmpty) {
                 token = existingToken;
+              } else {
+                firstWs['token'] = token;
+                await onebotFile.writeAsString(
+                  const JsonEncoder.withIndent('  ').convert(data),
+                );
               }
               port = int.tryParse(firstWs['port']?.toString() ?? '') ?? port;
             }
@@ -65,7 +70,21 @@ class ConfigService {
             );
           }
         } catch (e) {
-          Log.w('Failed to parse onebot11.json, using default token/port', tag: 'ConfigService');
+          Log.w('Failed to parse onebot11.json, recreating with default token/port: $e', tag: 'ConfigService');
+          final defaultOnebot = {
+            "network": {
+              "httpServers": [],
+              "httpClients": [],
+              "websocketServers": [_buildDefaultWsServerEntry(port, token)],
+              "websocketClients": [],
+            },
+            "musicSignUrl": "",
+            "enableLocalFile2Url": false,
+            "parseMultMsg": false,
+          };
+          await onebotFile.writeAsString(
+            const JsonEncoder.withIndent('  ').convert(defaultOnebot),
+          );
         }
       } else {
         final defaultOnebot = {

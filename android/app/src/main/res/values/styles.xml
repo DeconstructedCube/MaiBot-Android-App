@@ -18,11 +18,6 @@
         <item name="android:windowAnimationStyle">@style/windowAnimation</item>
     </style>
 
-    <style name="WebTheme" parent="@android:style/Theme.NoTitleBar.Fullscreen">
-        <item name="android:windowBackground">?android:colorBackground</item>
-        <item name="android:windowAnimationStyle">@style/windowAnimation</item>
-    </style>
-    
     <style name="windowAnimation" parent="@android:style/Animation.Translucent">
         <item name="android:activityOpenEnterAnimation">@null</item>
         <item name="android:activityOpenExitAnimation">@null</item>

@@ -3,6 +3,7 @@ import 'package:global_repository/global_repository.dart';
 import 'package:settings/settings.dart';
 import '../pages/terminal/terminal_page.dart';
 import '../pages/webview/webview_page.dart';
+import '../controllers/home_controller.dart';
 
 class AppRoutes {
   static const String privacy = '/privacy';
@@ -16,6 +17,7 @@ class AppRoutes {
         onAgreeTap: () {
           'privacy'.setting.set(true);
           Get.offAllNamed(terminal);
+          Get.find<HomeController>().startBootstrapSequence();
         },
       ),
       transition: Transition.fadeIn,

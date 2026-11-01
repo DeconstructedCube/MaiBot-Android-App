@@ -92,7 +92,6 @@ class _WebViewPageState extends State<WebViewPage> {
   @override
   void initState() {
     super.initState();
-    _initSystemUI();
     _initMaiBotController();
     _initNapCatController();
 
@@ -115,27 +114,7 @@ class _WebViewPageState extends State<WebViewPage> {
   void dispose() {
     _customWebViewsWorker?.dispose();
     _napCatTokenWorker?.dispose();
-    _restoreSystemUI();
     super.dispose();
-  }
-
-  void _initSystemUI() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-    ));
-  }
-
-  void _restoreSystemUI() {
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
-    ));
   }
 
   // 检查URL是否为本地地址
@@ -356,19 +335,14 @@ class _WebViewPageState extends State<WebViewPage> {
     return _customControllers[url]!;
   }
 
-
   void _injectClipboardScript(WebViewController controller) {
     const String jsCode = '''
-      const originalReadText = navigator.clipboard.readText;
       navigator.clipboard.readText = function () {
-        console.log('Intercepted clipboard read');
         return new Promise((resolve) => {
           Android.postMessage('getClipboardData');
           setTimeout(() => {
-            originalReadText.call(navigator.clipboard).then(text => {
-              resolve(text);
-            }).catch(() => resolve(''));
-          }, 100);
+            resolve(window.clipboardText || '');
+          }, 80);
         });
       };
     ''';
@@ -485,7 +459,6 @@ class _WebViewPageState extends State<WebViewPage> {
         _previousNavItemCount = currentNavItemCount;
       }
 
-      final theme = Theme.of(context);
       final isDark = theme.brightness == Brightness.dark;
 
       return AnnotatedRegion<SystemUiOverlayStyle>(

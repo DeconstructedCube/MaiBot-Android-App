@@ -120,7 +120,6 @@ class MaintenanceActions {
 
       Future.delayed(const Duration(seconds: 2), () async {
         await SystemNavigator.pop();
-        exit(0);
       });
     } catch (e) {
       Log.e('重新安装 MaiBot 失败: $e', tag: 'MaiBot');
@@ -203,7 +202,6 @@ class MaintenanceActions {
 
         Future.delayed(const Duration(seconds: 2), () async {
           await SystemNavigator.pop();
-          exit(0);
         });
       } else {
         Get.snackbar(
@@ -280,7 +278,6 @@ class MaintenanceActions {
 
       Future.delayed(const Duration(seconds: 2), () async {
         await SystemNavigator.pop();
-        exit(0);
       });
     } catch (e) {
       Log.e('删除 Python 虚拟环境失败: $e', tag: 'MaiBot');
@@ -348,8 +345,8 @@ class MaintenanceActions {
     // 等待停止指令送达并处理
     await Future.delayed(const Duration(milliseconds: 300));
     await SystemNavigator.pop();
-    exit(0);
   }
+
   /// 退出应用（设置页入口）
   static Future<void> exitApp() async {
     await performExit(showConfirmation: true);

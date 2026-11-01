@@ -46,49 +46,6 @@ class BackupService {
     }
   }
 
-  /// 同步获取本地现有的所有有效备份文件
-  static List<File> getAvailableBackups() {
-    try {
-      final backupDirs = [
-        getMaiBotBackupDirectory(),
-        Directory('${RuntimeEnvir.homePath}/backups'),
-      ];
-      final seenPaths = <String>{};
-      final fileEntries = <({File file, DateTime modified})>[];
-
-      for (final backupDir in backupDirs) {
-        if (!backupDir.existsSync()) continue;
-        for (final entity in backupDir.listSync()) {
-          if (entity is File && entity.path.endsWith('.tar.gz')) {
-            if (seenPaths.contains(entity.path)) continue;
-            seenPaths.add(entity.path);
-            try {
-              final stat = entity.statSync();
-              if (stat.size > 1024) {
-                fileEntries.add((file: entity, modified: stat.modified));
-              }
-            } catch (_) {}
-          }
-        }
-      }
-
-      fileEntries.sort((a, b) => b.modified.compareTo(a.modified));
-      return fileEntries.map((e) => e.file).toList();
-    } catch (e) {
-      Log.e('扫描备份文件失败: $e', tag: 'BackupService');
-      return [];
-    }
-  }
-
-  /// 安全平滑停止后台进程与 Linux 容器
-  static Future<void> safelyTerminateProcessesForMaintenance() async {
-    Log.i('通过统一进程管理器平滑停止后台容器与进程...', tag: 'BackupService');
-    await BackendProcessManager.runMaintenanceTransaction(
-      action: () async => null,
-      autoRestart: false,
-    );
-  }
-
   /// 确保获取存储权限（支持 Android 11+ 所有文件权限与旧版存储权限），无法获取时降级使用内部目录
   static Future<bool> ensureStoragePermission() async {
     try {
@@ -331,15 +288,16 @@ class BackupService {
       autoRestart: restartService,
       action: () async {
         try {
+          final available = await inspectBackupContents(backupFile);
           final extractTargets = <String>[];
-          if (restoreData) extractTargets.add('MaiBot/data');
-          if (restoreConfig) extractTargets.add('MaiBot/config');
-          if (restorePlugins) extractTargets.add('MaiBot/plugins');
-          if (restoreNapcat) extractTargets.add('napcat/config');
+          if (restoreData && available['data'] == true) extractTargets.add('MaiBot/data');
+          if (restoreConfig && available['config'] == true) extractTargets.add('MaiBot/config');
+          if (restorePlugins && available['plugins'] == true) extractTargets.add('MaiBot/plugins');
+          if (restoreNapcat && available['napcat'] == true) extractTargets.add('napcat/config');
 
           if (extractTargets.isEmpty) {
             if (showSnackbar) {
-              Get.snackbar('提示', '未选择任何要恢复的模块',
+              Get.snackbar('提示', '选定的模块在备份包中不存在或未选择任何模块',
                   snackPosition: SnackPosition.BOTTOM);
             }
             return true;

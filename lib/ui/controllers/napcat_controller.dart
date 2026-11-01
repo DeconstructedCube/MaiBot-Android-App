@@ -21,6 +21,8 @@ class NapcatController extends GetxController {
   Dialog? _qrcodeDialog;
   bool isQrcodeProcessed = false;
 
+  bool get isQrcodeShowing => _isQrcodeShowing.value;
+
   @override
   void onInit() {
     super.onInit();
@@ -143,14 +145,13 @@ class NapcatController extends GetxController {
           break;
 
         case NapcatLogEventType.configLoaded:
+          isQrcodeProcessed = true;
           if (_isQrcodeShowing.value) {
             if (_qrcodeDialog != null) {
               Get.back();
               _isQrcodeShowing.value = false;
               _qrcodeDialog = null;
             }
-
-            isQrcodeProcessed = true;
             _checkAndPromptSaveQQ();
           }
           break;
@@ -159,9 +160,9 @@ class NapcatController extends GetxController {
           if (_isQrcodeShowing.value) {
             if (_qrcodeDialog != null) {
               Get.back();
-              _isQrcodeShowing.value = false;
-              _qrcodeDialog = null;
             }
+            _isQrcodeShowing.value = false;
+            _qrcodeDialog = null;
 
             Get.snackbar(
               'NapCat 登录失败',

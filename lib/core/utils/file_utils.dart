@@ -7,7 +7,7 @@ import 'package:xterm/xterm.dart';
 import '../config/app_config.dart';
 
 // 为了获取Apk So库路径，我们需要一个MethodChannel
-MethodChannel _channel = const MethodChannel(Config.methodChannel);
+const MethodChannel _channel = MethodChannel(Config.methodChannel);
 
 /// 获取 Apk So 库路径
 /// Gets the path of the Apk So library
@@ -34,10 +34,10 @@ Directory getMaiBotBackupDirectory() {
   for (final path in candidates) {
     try {
       final dir = Directory(path);
-      if (!dir.existsSync()) {
-        dir.createSync(recursive: true);
+      dir.createSync(recursive: true);
+      if (dir.existsSync()) {
+        return dir;
       }
-      return dir;
     } catch (_) {}
   }
   // 若外部公共存储受限无法写入，安全回退至应用内部持久化目录

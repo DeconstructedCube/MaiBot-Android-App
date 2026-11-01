@@ -379,7 +379,6 @@ Future<void> showBackupRestoreDialog({
                                 await BackendProcessManager.stopService();
                               } catch (_) {}
                               await SystemNavigator.pop();
-                              exit(0);
                             });
                           } else {
                             Get.snackbar(

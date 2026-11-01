@@ -46,8 +46,7 @@ case "$ACTION" in
         echo "[GIT] 抓取目标分支 $TARGET 远程引用..."
         git -c gc.auto=0 fetch origin "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || \
         git -c gc.auto=0 fetch origin "$TARGET" 2>/dev/null || \
-        git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || \
-        git -c gc.auto=0 fetch --all 2>/dev/null || true
+        git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
         git stash 2>/dev/null || true
         echo "[GIT] 正在检出分支 $TARGET..."
         if git show-ref --verify --quiet "refs/heads/$TARGET"; then
@@ -56,10 +55,9 @@ case "$ACTION" in
             git -c gc.auto=0 checkout -b "$TARGET" --track "origin/$TARGET" 2>/dev/null || \
             git -c gc.auto=0 checkout -B "$TARGET" "origin/$TARGET" || \
             git -c gc.auto=0 checkout -f "$TARGET"
-        elif [ -f .git/FETCH_HEAD ]; then
-            git -c gc.auto=0 checkout -B "$TARGET" FETCH_HEAD || git -c gc.auto=0 checkout -f "$TARGET"
         else
-            git -c gc.auto=0 checkout "$TARGET" || git -c gc.auto=0 checkout -f "$TARGET"
+            echo "[GIT] 错误: 未能在本地或远程找到分支 $TARGET" >&2
+            exit 1
         fi
         echo "[GIT] 同步分支最新提交..."
         git -c gc.auto=0 pull --rebase=false origin "$TARGET" 2>/dev/null || git -c gc.auto=0 pull --rebase=false 2>/dev/null || true

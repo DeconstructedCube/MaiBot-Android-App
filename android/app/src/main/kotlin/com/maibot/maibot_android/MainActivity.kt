@@ -1,16 +1,13 @@
 package com.maibot.maibot_android
 
-import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
-import android.webkit.ValueCallback
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import io.flutter.embedding.android.FlutterFragment
@@ -30,13 +27,11 @@ class MainActivity : FragmentActivity() {
 
         private const val TAG_FLUTTER_FRAGMENT = "flutter_fragment"
         private const val ENGINE_ID = "my_engine_id"
-        private const val FILE_CHOOSER_REQUEST_CODE = 1
     }
 
     private var flutterFragment: FlutterFragment? = null
     private lateinit var mContext: Context
     private lateinit var fragmentManager: FragmentManager
-    private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         instance = this
@@ -194,44 +189,6 @@ class MainActivity : FragmentActivity() {
         flutterFragment?.onNewIntent(intent)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
-            val callback = filePathCallback ?: return
-            var results: Array<Uri>? = null
-
-            if (resultCode == Activity.RESULT_OK && data != null) {
-                val dataString = data.dataString
-                val clipData = data.clipData
-                if (dataString != null) {
-                    results = arrayOf(Uri.parse(dataString))
-                } else if (clipData != null) {
-                    val count = clipData.itemCount
-                    results = Array(count) { i -> clipData.getItemAt(i).uri }
-                }
-            }
-
-            callback.onReceiveValue(results)
-            filePathCallback = null
-        }
-
-        flutterFragment?.onActivityResult(requestCode, resultCode, data)
-    }
-
-    fun openFileChooser(callback: ValueCallback<Array<Uri>>) {
-        filePathCallback = callback
-
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        }
-
-        val chooserIntent = Intent.createChooser(intent, "选择文件")
-        startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST_CODE)
-    }
-
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (flutterFragment != null) {
@@ -306,7 +263,6 @@ class MainActivity : FragmentActivity() {
         }
         return false
     }
-
 
     override fun onDestroy() {
         if (instance === this) {

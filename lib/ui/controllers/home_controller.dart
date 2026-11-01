@@ -27,7 +27,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   // 终端标签页管理器
   late final TerminalTabManager terminalTabManager;
   Setting privacySetting = 'privacy'.setting;
-  Setting showTerminalWhiteText = 'show_terminal_white_text'.setting;
   Setting hideFromRecents = 'hide_from_recents'.setting;
 
   // 确定性启动生命周期状态机与有界端口探测器
@@ -62,6 +61,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   late final ProgressTracker progressTracker;
 
   bool _isAppInForeground = true;
+  bool _bootstrapStarted = false;
 
   double get progress => progressTracker.progress;
   String get currentProgress => progressTracker.currentProgress;
@@ -77,10 +77,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     update();
   }
 
-  /// 检查状态机是否满足进入主控制台的条件（Web 端口已就绪 且 登录已处理 且 应用在前台）
+  /// 检查状态机是否满足进入主控制台的条件（Web 端口已就绪 且 QQ 登录已处理 且 应用在前台 且 非扫码弹窗中）
   void _checkAndNavigateToWebview() {
-    if (napcatController.isQrcodeProcessed ||
-        napcatController.napCatWebUiToken.isNotEmpty) {
+    if (napcatController.isQrcodeProcessed) {
       if (!lifecycle.loginReady) {
         lifecycle.markLoginReady();
         _syncProgressFromLifecycle();
@@ -89,6 +88,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
     if (lifecycle.canEnterWebview &&
         _isAppInForeground &&
+        !napcatController.isQrcodeShowing &&
         !webviewController.webviewHasOpen) {
       _portProber.cancel();
       webviewController.navigateToWebview();
@@ -130,6 +130,40 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         },
       ),
     );
+  }
+
+  /// 首次或同意隐私政策后的环境引导流水线
+  Future<void> startBootstrapSequence() async {
+    if (_bootstrapStarted) return;
+    _bootstrapStarted = true;
+
+    try {
+      if (Platform.isAndroid) {
+        try {
+          final notifStatus = await Permission.notification.status;
+          if (!notifStatus.isGranted) {
+            await Get.to(() => PermissionRequestPage(
+              onPermissionsGranted: () {
+                Get.back();
+              },
+            ));
+          }
+        } catch (e) {
+          Log.w('通知权限检查跳过: $e', tag: 'HomeController');
+        }
+      }
+    } catch (e) {
+      Log.w('启动前置权限/隐私确认异常: $e', tag: 'HomeController');
+    }
+
+    try {
+      await loadMaiBot();
+    } catch (e, stack) {
+      Log.e('loadMaiBot 启动致命异常: $e\n$stack', tag: 'HomeController');
+      terminal.write('\x1b[31m[致命错误]\x1b[0m 后台初始化异常: $e\r\n');
+      lifecycle.fail('后台启动异常: $e');
+      _syncProgressFromLifecycle();
+    }
   }
 
   /// 初始化环境并驱动安装/启动流水线
@@ -243,9 +277,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
     progressTracker = ProgressTracker(
       onChanged: () => update(),
-      onNapcatInstalled: () {
-        Log.i('检测到 Napcat 已安装，准备就绪', tag: 'MaiBot');
-      },
     );
     progressTracker.terminal = terminal;
 
@@ -254,36 +285,8 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        if (privacySetting.get() != true) {
-          return;
-        }
-
-        if (Platform.isAndroid) {
-          try {
-            final notifStatus = await Permission.notification.status;
-            if (!notifStatus.isGranted) {
-              await Get.to(() => PermissionRequestPage(
-                onPermissionsGranted: () {
-                  Get.back();
-                },
-              ));
-            }
-          } catch (e) {
-            Log.w('通知权限检查跳过: $e', tag: 'HomeController');
-          }
-        }
-      } catch (e) {
-        Log.w('启动前置权限/隐私确认异常: $e', tag: 'HomeController');
-      }
-
-      try {
-        await loadMaiBot();
-      } catch (e, stack) {
-        Log.e('loadMaiBot 启动致命异常: $e\n$stack', tag: 'HomeController');
-        terminal.write('\x1b[31m[致命错误]\x1b[0m 后台初始化异常: $e\r\n');
-        lifecycle.fail('后台启动异常: $e');
-        _syncProgressFromLifecycle();
+      if (privacySetting.get() == true) {
+        await startBootstrapSequence();
       }
     });
 

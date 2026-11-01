@@ -101,6 +101,7 @@ class ProotService : Service() {
     companion object {
         private const val TAG = "ProotService"
         private const val CHANNEL_ID = "maibot_native_backend"
+        private const val NOTIFICATION_ID = 1002
 
         // 5-Byte Length-Prefixed Binary Frame Types
         const val FRAME_PTY_DATA: Byte = 0x01
@@ -128,6 +129,7 @@ class ProotService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var maibotProcess: ProotProcess? = null
     private var napcatProcess: ProotProcess? = null
+    private var isForegroundActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -146,6 +148,43 @@ class ProotService : Service() {
                     Log.e(TAG, "Command execution error", e)
                 }
             }
+        }
+    }
+
+    private fun ensureForegroundNotification() {
+        if (isForegroundActive) return
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            notificationIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val exitIntent = Intent(this, ExitReceiver::class.java).apply {
+            action = ExitReceiver.ACTION_EXIT
+        }
+        val exitPendingIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            exitIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        )
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("MaiBot 后台服务")
+            .setContentText("容器与服务正在后台运行")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "退出应用", exitPendingIntent)
+            .setOngoing(true)
+            .build()
+
+        try {
+            startForeground(NOTIFICATION_ID, notification)
+            isForegroundActive = true
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground error", e)
         }
     }
 
@@ -178,39 +217,6 @@ class ProotService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notificationIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val exitIntent = Intent(this, ExitReceiver::class.java).apply {
-            action = ExitReceiver.ACTION_EXIT
-        }
-        val exitPendingIntent = PendingIntent.getBroadcast(
-            this,
-            0,
-            exitIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MaiBot 后台服务")
-            .setContentText("容器与服务正在后台运行")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "退出应用", exitPendingIntent)
-            .setOngoing(true)
-            .build()
-
-        try {
-            startForeground(1002, notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "startForeground error", e)
-        }
-
         val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
         val action = intent?.action
         val userStopped = sp.getBoolean("user_stopped", false)
@@ -226,9 +232,23 @@ class ProotService : Service() {
             sp.edit().putBoolean("auto_start_enabled", enabled).apply()
             return START_NOT_STICKY
         }
+
+        // 处理 STOP 指令
+        if ("STOP" == action || ("CONTROL" == action && intent.getStringExtra("action")?.equals("STOP", ignoreCase = true) == true && intent.getStringExtra("target")?.equals("ALL", ignoreCase = true) == true)) {
+            val binPath = intent?.getStringExtra("binPath") ?: sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
+            val tmpPath = intent?.getStringExtra("tmpPath") ?: sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
+            val ubuntuPath = intent?.getStringExtra("ubuntuPath") ?: sp.getString("ubuntuPath", null)
+                ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+
+            commandChannel.trySend {
+                handleCommandAsync("STOP", "STOP", "ALL", binPath, "${filesDir.absolutePath}/home", tmpPath, ubuntuPath)
+            }
+            return START_NOT_STICKY
+        }
+
         if (userStopped && action != "CONTROL" && action != "START") {
             Log.i(TAG, "用户之前已显式退出应用，禁止后台自动唤醒")
-            stopSelf()
+            stopForegroundAndSelf()
             return START_NOT_STICKY
         }
 
@@ -251,19 +271,21 @@ class ProotService : Service() {
                     Log.i(TAG, "自启动已被用户关闭，ProotService 保持待命状态")
                     return START_NOT_STICKY
                 }
-                binPath = sp.getString("binPath", null) ?: applicationInfo.nativeLibraryDir
-                homePath = sp.getString("homePath", null) ?: "${filesDir.absolutePath}/usr"
-                tmpPath = sp.getString("tmpPath", null) ?: cacheDir.absolutePath
+                binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
+                homePath = sp.getString("homePath", null) ?: "${filesDir.absolutePath}/home"
+                tmpPath = sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
                 ubuntuPath = sp.getString("ubuntuPath", null)
                     ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
             }
 
-            val curBin = binPath ?: applicationInfo.nativeLibraryDir
-            val curHome = homePath ?: "${filesDir.absolutePath}/usr"
-            val curTmp = tmpPath ?: cacheDir.absolutePath
+            val curBin = binPath ?: "${filesDir.absolutePath}/usr/bin"
+            val curHome = homePath ?: "${filesDir.absolutePath}/home"
+            val curTmp = tmpPath ?: "${filesDir.absolutePath}/usr/tmp"
             val curUbuntu = ubuntuPath ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
             val ctrlAction = intent.getStringExtra("action")?.uppercase() ?: "START"
             val ctrlTarget = intent.getStringExtra("target")?.uppercase() ?: "ALL"
+
+            ensureForegroundNotification()
 
             commandChannel.trySend {
                 handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu)
@@ -350,6 +372,7 @@ class ProotService : Service() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
+        isForegroundActive = false
         stopSelf()
     }
 
@@ -483,8 +506,8 @@ class ProotService : Service() {
 
     override fun onDestroy() {
         val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-        val binPath = sp.getString("binPath", null) ?: applicationInfo.nativeLibraryDir
-        val tmpPath = sp.getString("tmpPath", null) ?: cacheDir.absolutePath
+        val binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
+        val tmpPath = sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
         val ubuntuPath = sp.getString("ubuntuPath", null)
             ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
 
@@ -524,21 +547,34 @@ class ProotService : Service() {
 
     private fun cleanNapcatLocks(tmpPath: String, ubuntuPath: String) {
         try {
-            val paths = arrayOf(
-                "$tmpPath/SingletonLock",
-                "$tmpPath/SingletonSocket",
-                "$tmpPath/SingletonCookie",
-                "$tmpPath/.X1-lock",
-                "$ubuntuPath/tmp/SingletonLock",
-                "$ubuntuPath/tmp/SingletonSocket",
-                "$ubuntuPath/tmp/SingletonCookie",
-                "$ubuntuPath/root/.config/QQ/SingletonLock",
-                "$ubuntuPath/root/.config/QQ/SingletonSocket",
-                "$ubuntuPath/root/.config/QQ/SingletonCookie"
-            )
-            for (p in paths) {
-                val f = File(p)
-                if (f.exists()) f.delete()
+            val dirsToClean = arrayOf(tmpPath, "$ubuntuPath/tmp")
+            for (dirStr in dirsToClean) {
+                val d = File(dirStr)
+                if (d.exists() && d.isDirectory) {
+                    d.listFiles()?.forEach { file ->
+                        val name = file.name
+                        if (name.startsWith("Singleton") ||
+                            name.startsWith(".X") ||
+                            name.startsWith("QQ") ||
+                            name.startsWith("xvfb-run")
+                        ) {
+                            try {
+                                file.deleteRecursively()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+            val qqConfig = File("$ubuntuPath/root/.config/QQ")
+            if (qqConfig.exists() && qqConfig.isDirectory) {
+                qqConfig.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (name.startsWith("Singleton") || name.contains("lock") || name.startsWith("Crashpad")) {
+                        try {
+                            file.deleteRecursively()
+                        } catch (_: Exception) {}
+                    }
+                }
             }
         } catch (_: Exception) {}
     }
@@ -606,6 +642,7 @@ class ProotService : Service() {
 
         private var restartCount = 0
         private var restartJob: Job? = null
+        private var startJob: Job? = null
         private var acceptJob: Job? = null
         private var stdoutJob: Job? = null
 
@@ -732,11 +769,13 @@ class ProotService : Service() {
             }
             restartJob?.cancel()
             restartJob = null
+            startJob?.cancel()
             notifyState(ServiceState.STARTING)
 
-            serviceScope.launch {
+            startJob = serviceScope.launch {
                 try {
                     initServerSocket()
+                    if (isStopped) return@launch
                     historyBuffer.clear()
 
                     val cmd = mutableListOf(
@@ -772,6 +811,8 @@ class ProotService : Service() {
                     }
                     cmd.add("/bin/sh")
 
+                    if (isStopped) return@launch
+
                     val pb = ProcessBuilder(cmd)
                     pb.environment().apply {
                         put("PATH", "$binPath:/system/bin:/system/xbin")
@@ -804,6 +845,9 @@ class ProotService : Service() {
                         put("TMP", "/tmp")
                     }
                     pb.redirectErrorStream(true)
+
+                    if (isStopped) return@launch
+
                     val p = pb.start()
                     process = p
                     currentPid = extractPid(p)
@@ -843,9 +887,11 @@ class ProotService : Service() {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "$name start error", e)
-                    notifyState(ServiceState.ERROR)
-                    scheduleRestart()
+                    if (!isStopped) {
+                        Log.e(TAG, "$name start error", e)
+                        notifyState(ServiceState.ERROR)
+                        scheduleRestart()
+                    }
                 }
             }
         }
@@ -890,6 +936,8 @@ class ProotService : Service() {
             restartCount = 0
             restartJob?.cancel()
             restartJob = null
+            startJob?.cancel()
+            startJob = null
             acceptJob?.cancel()
             acceptJob = null
             stdoutJob?.cancel()

@@ -4,55 +4,51 @@ import 'package:global_repository/global_repository.dart';
 
 import '../utils/file_utils.dart';
 
-/// 环境引导器：负责将动态库链接到数据目录、创建 busybox 软链接。
+/// 环境引导器：负责将原生动态库链接到数据目录可执行路径、创建 busybox 软链接。
 class EnvBootstrapper {
-  static final _libSoRegExp = RegExp(r'^lib|\.so$');
-
-  /// 初始化环境，将动态库中的文件链接到数据目录
-  /// Init environment and link files from the dynamic library to the data directory
+  /// 初始化环境，将原生库文件符号链接到应用运行环境 bin 目录
   static Future<void> initEnvir() async {
     await Directory(RuntimeEnvir.binPath).create(recursive: true);
-    List<String> androidFiles = [
-      'libbash.so',
-      'libbusybox.so',
-      'liblibtalloc.so.2.so',
-      'libloader.so',
-      'libproot.so',
-      'libsudo.so'
+    final List<({String soName, String targetName})> nativeFiles = [
+      (soName: 'libbash.so', targetName: 'bash'),
+      (soName: 'libbusybox.so', targetName: 'busybox'),
+      (soName: 'liblibtalloc.so.2.so', targetName: 'libtalloc.so.2'),
+      (soName: 'libloader.so', targetName: 'loader'),
+      (soName: 'libproot.so', targetName: 'proot'),
+      (soName: 'libsudo.so', targetName: 'sudo'),
     ];
-    String libPath = await getLibPath();
-    Log.i('libPath -> $libPath');
+    final String libPath = await getLibPath();
+    Log.i('Native library directory -> $libPath', tag: 'EnvBootstrapper');
 
-    for (int i = 0; i < androidFiles.length; i++) {
-      // when android target sdk > 28
-      // cannot execute file in /data/data/com.xxx/files/usr/bin
-      // so we need create a link to /data/data/com.xxx/files/usr/bin
-      final sourcePath = '$libPath/${androidFiles[i]}';
-      String fileName = androidFiles[i].replaceAll(_libSoRegExp, '');
-      String filePath = '${RuntimeEnvir.binPath}/$fileName';
-      // custom path, termux-api will invoke
-      File file = File(filePath);
-      FileSystemEntityType type = await FileSystemEntity.type(filePath);
-      Log.i('$fileName type -> $type');
+    for (final item in nativeFiles) {
+      final sourcePath = '$libPath/${item.soName}';
+      final filePath = '${RuntimeEnvir.binPath}/${item.targetName}';
+
+      final file = File(filePath);
+      final FileSystemEntityType type = await FileSystemEntity.type(filePath);
       if (type != FileSystemEntityType.notFound &&
           type != FileSystemEntityType.link) {
-        // old version adb is plain file
-        Log.i('find plain file -> $fileName, delete it');
-        await file.delete();
+        Log.i('Found regular file at link target -> ${item.targetName}, removing', tag: 'EnvBootstrapper');
+        try {
+          await file.delete();
+        } catch (e) {
+          Log.e('Failed to delete regular file -> $e', tag: 'EnvBootstrapper');
+        }
       }
-      Link link = Link(filePath);
+
+      final link = Link(filePath);
       if (await link.exists()) {
         try {
           await link.delete();
         } catch (e) {
-          Log.e('delete link error -> $e');
+          Log.w('Failed to delete existing link -> $e', tag: 'EnvBootstrapper');
         }
       }
+
       try {
-        Log.i('create link -> $fileName ${link.path}');
         await link.create(sourcePath);
       } catch (e) {
-        Log.e('installAdbToEnvir error -> $e');
+        Log.e('Failed to create link for ${item.targetName} -> $e', tag: 'EnvBootstrapper');
       }
     }
 
@@ -60,80 +56,44 @@ class EnvBootstrapper {
     await createBusyboxLink();
   }
 
-  /// 创建 busybox 的软连接，来确保 proot 会用到的命令正常运行
-  /// create busybox symlinks, to ensure proot can use the commands normally
+  /// 创建 busybox 常用命令符号链接，确保 proot 运行时环境可用
   static Future<void> createBusyboxLink() async {
     try {
-      List<String> links = [
-        ...[
-          'awk',
-          'ash',
-          'basename',
-          'bzip2',
-          'curl',
-          'cp',
-          'chmod',
-          'cut',
-          'cat',
-          'du',
-          'dd',
-          'find',
-          'grep',
-          'gzip'
-        ],
-        ...[
-          'hexdump',
-          'head',
-          'id',
-          'lscpu',
-          'mkdir',
-          'realpath',
-          'rm',
-          'sed',
-          'stat',
-          'sh',
-          'tr',
-          'tar',
-          'uname',
-          'xargs',
-          'xz',
-          'xxd'
-        ]
+      const List<String> links = [
+        'awk', 'ash', 'basename', 'bzip2', 'curl', 'cp', 'chmod', 'cut',
+        'cat', 'du', 'dd', 'find', 'grep', 'gzip', 'hexdump', 'head', 'id',
+        'lscpu', 'mkdir', 'realpath', 'rm', 'sed', 'stat', 'sh', 'tr',
+        'tar', 'uname', 'xargs', 'xz', 'xxd',
       ];
 
-      for (String linkName in links) {
-        String linkPath = '${RuntimeEnvir.binPath}/$linkName';
-        Link link = Link(linkPath);
+      final busyboxTarget = '${RuntimeEnvir.binPath}/busybox';
+      for (final linkName in links) {
+        final linkPath = '${RuntimeEnvir.binPath}/$linkName';
+        final link = Link(linkPath);
         if (await link.exists()) {
           try {
             await link.delete();
-          } catch (e) {
-            Log.e('delete busybox link error -> $e');
-          }
+          } catch (_) {}
         }
         try {
-          await link.create('${RuntimeEnvir.binPath}/busybox');
+          await link.create(busyboxTarget);
         } catch (e) {
-          Log.e('create busybox link error -> $e');
+          Log.w('Failed to link busybox tool $linkName -> $e', tag: 'EnvBootstrapper');
         }
       }
 
-      String fileLinkPath = '${RuntimeEnvir.binPath}/file';
-      Link fileLink = Link(fileLinkPath);
+      final fileLinkPath = '${RuntimeEnvir.binPath}/file';
+      final fileLink = Link(fileLinkPath);
       if (await fileLink.exists()) {
         try {
           await fileLink.delete();
-        } catch (e) {
-          Log.e('delete file link error -> $e');
-        }
+        } catch (_) {}
       }
       try {
         await fileLink.create('/system/bin/file');
-      } catch (e) {
-        Log.e('create file link error -> $e');
-      }
+      } catch (_) {}
     } catch (e) {
-      Log.e('Create link failed -> $e');
+      Log.e('Create busybox links failed -> $e', tag: 'EnvBootstrapper');
     }
   }
 }

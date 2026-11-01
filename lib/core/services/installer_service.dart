@@ -467,7 +467,7 @@ class InstallerService {
         'default = true\n',
       );
 
-      // 保持 fake proc 节点初始化
+      // 保持 fake proc 节点初始化（含关键的 cap_last_cap 与 inotify_max_user_watches）
       final procDir = Directory('${scripts.ubuntuPath}/proc');
       await procDir.create(recursive: true);
       final loadavg = File('${procDir.path}/.loadavg');
@@ -518,6 +518,15 @@ class InstallerService {
           'Hardware\t: MaiBot Android Virtual ARM64\n',
         );
       }
+      final capLastCap = File('${procDir.path}/.sysctl_entry_cap_last_cap');
+      if (!await capLastCap.exists()) {
+        await capLastCap.writeAsString('63\n');
+      }
+      final inotifyWatches = File('${procDir.path}/.sysctl_inotify_max_user_watches');
+      if (!await inotifyWatches.exists()) {
+        await inotifyWatches.writeAsString('1048576\n');
+      }
+
       await _writeSourcesList(MirrorRegistry.aptPortMirrors.first, onLog);
     } catch (e) {
       Log.e('Failed to write network configs: $e', tag: 'InstallerService');
@@ -553,7 +562,6 @@ class InstallerService {
         await wgetBinary.exists() &&
         await sudoBinary.exists() &&
         await aria2Binary.exists()) {
-      await _writeNetworkConfigs(onLog);
       return true;
     }
 
@@ -653,12 +661,7 @@ class InstallerService {
 
     final mirrors = customRepoUrl.isNotEmpty
         ? ['']
-        : [
-            'https://ghfast.top/',
-            'https://ghproxy.vip/',
-            'https://gh-proxy.com/',
-            '',
-          ];
+        : MirrorRegistry.githubPrefixMirrors;
     final tmpDir = '${scripts.ubuntuPath}/root/MaiBot_tmp';
 
     for (final mirror in mirrors) {
