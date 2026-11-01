@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
 import 'package:settings/settings.dart';
+import '../pages/privacy_agree_page.dart';
 import '../pages/terminal/terminal_page.dart';
 import '../pages/webview/webview_page.dart';
 import '../controllers/home_controller.dart';

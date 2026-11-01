@@ -135,6 +135,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return PopScope(
       canPop: false,
@@ -192,7 +193,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.notifications_none_rounded,
                           title: '通知权限',
-                          description: '保持后台服务常驻运行。',
+                          description: '保持前台服务常驻运行。',
                           isGranted: _notificationGranted,
                           isRequired: true,
                           onRequest: () => unawaited(_requestNotificationPermission()),
@@ -242,7 +243,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
                     decoration: BoxDecoration(
                       color: colorScheme.surfaceContainer,
                       border: Border(
