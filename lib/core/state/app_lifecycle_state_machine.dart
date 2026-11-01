@@ -1,6 +1,6 @@
 /// 安装流水线细分阶段
 enum InstallStage {
-  extractingRootfs(0.15, '正在解压 Ubuntu 根文件系统...'),
+  extractingRootfs(0.05, '正在解压 Ubuntu 根文件系统...'),
   configuringNetwork(0.25, '配置网络代理与系统参数...'),
   checkingSystemDeps(0.40, '正在检查并安装系统运行依赖...'),
   installingUv(0.52, '正在下载并安装 uv...'),
