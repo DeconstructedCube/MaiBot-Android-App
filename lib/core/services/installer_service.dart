@@ -66,7 +66,7 @@ class InstallerService {
 
         // 1.1 校验或从应用 assets 释放镜像归档
         if (!await archiveFile.exists() || await archiveFile.length() < 1000000) {
-          onLog?.call('[系统] 准备镜像文件 (62MB)...\r\n');
+          onLog?.call('\x1b[36m[系统]\x1b[0m 准备镜像文件 (62MB)...\r\n');
           onProgress('准备镜像文件...', 0.0);
           try {
             final ByteData byteData = await rootBundle.load('assets/${Config.ubuntuFileName}');
@@ -77,7 +77,7 @@ class InstallerService {
             await archiveFile.parent.create(recursive: true);
             await archiveFile.writeAsBytes(picBytes, flush: true);
             final mb = (picBytes.length / (1024 * 1024)).toStringAsFixed(1);
-            onLog?.call('[系统] 镜像已就绪 (${mb}MB)\r\n');
+            onLog?.call('\x1b[32m[系统]\x1b[0m 镜像已就绪 (${mb}MB)\r\n');
           } catch (e) {
             onLog?.call('\x1b[31m[错误]\x1b[0m 读取镜像文件失败: $e\r\n');
             return false;
@@ -86,7 +86,7 @@ class InstallerService {
 
         // 1.2 执行 tar 解压并实时流式输出日志与平滑进度
         final args = ['tar', '-xJvf', archivePath, '-C', targetPath];
-        onLog?.call('[解压] 解压系统文件...\r\n');
+        onLog?.call('\x1b[36m[解压]\x1b[0m 解压系统文件...\r\n');
 
         final busyboxPath = '${RuntimeEnvir.binPath}/busybox';
         if (onLog != null) {
@@ -122,7 +122,7 @@ class InstallerService {
             if (!line.contains('chown') &&
                 !line.contains('mknod') &&
                 !line.contains('Operation not permitted')) {
-              onLog('\x1b[31m[警告]\x1b[0m $line\r\n');
+              onLog('\x1b[33m[警告]\x1b[0m $line\r\n');
             }
           });
 
@@ -150,7 +150,7 @@ class InstallerService {
         }
         if (await extractedDir.exists()) {
           await extractedDir.rename(scripts.ubuntuPath);
-          onLog?.call('[系统] 安装路径: ${scripts.ubuntuPath}\r\n');
+          onLog?.call('\x1b[32m[系统]\x1b[0m 安装路径: ${scripts.ubuntuPath}\r\n');
         }
 
         final bashCheck = File('${scripts.ubuntuPath}/bin/bash');
@@ -160,13 +160,13 @@ class InstallerService {
         }
 
         await rootfsMarker.writeAsString('ready');
-        onLog?.call('[系统] 校验通过\r\n');
+        onLog?.call('\x1b[32m[系统]\x1b[0m 校验通过\r\n');
 
         // 1.4 清理 62MB 安装包归档
         try {
           if (await archiveFile.exists()) {
             await archiveFile.delete();
-            onLog?.call('[系统] 清理临时镜像文件\r\n');
+            onLog?.call('\x1b[32m[系统]\x1b[0m 清理临时镜像文件\r\n');
           }
         } catch (_) {}
       } catch (e) {
@@ -242,7 +242,7 @@ class InstallerService {
           final adapterUrl =
               '${mirror}https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git';
           final label = mirror.isEmpty ? '官方源' : mirror;
-          onLog?.call('[下载] 适配器 ($label)...\r\n');
+          onLog?.call('\x1b[36m[下载]\x1b[0m 适配器 ($label)...\r\n');
           await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
           final res = await _runInProot(
             'git -c gc.auto=0 clone --depth=1 --branch main $adapterUrl /root/MaiBot/plugins/MaiBot-Napcat-Adapter',
@@ -278,16 +278,16 @@ class InstallerService {
           '安装 Python 依赖...',
         );
         final pypiPrimary = MirrorRegistry.activePypiMirror;
-        final uvSyncCmd = 'cd /root/MaiBot && '
+        final uvSyncCmd = 'export UV_HTTP_TIMEOUT=60; cd /root/MaiBot && '
             'if command -v script >/dev/null 2>&1; then '
-            '  script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv sync --color always --network-timeout 60 --index-url $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple" /dev/null; '
+            '  script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv sync --color always --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple" /dev/null; '
             'else '
-            '  /root/.local/bin/uv sync --color always --network-timeout 60 --index-url $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple; '
+            '  /root/.local/bin/uv sync --color always --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple; '
             'fi';
         var success = await _runInProot(uvSyncCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         if (!success) {
           onLog?.call('\x1b[33m[Python]\x1b[0m 依赖同步重试中...\r\n');
-          final fallbackCmd = 'cd /root/MaiBot && /root/.local/bin/uv sync --color always --network-timeout 90 --index-url https://pypi.org/simple --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
+          final fallbackCmd = 'export UV_HTTP_TIMEOUT=90; cd /root/MaiBot && /root/.local/bin/uv sync --color always --default-index https://pypi.org/simple --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
           success = await _runInProot(fallbackCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         }
         if (!success) return false;
@@ -307,7 +307,7 @@ class InstallerService {
         final configDir = Directory('${scripts.ubuntuPath}/root/napcat/config');
         if (await napcatDir.exists()) {
           if (!await tempBackup.exists() && await configDir.exists()) {
-            onLog?.call('[NapCat] 暂存配置文件...\r\n');
+            onLog?.call('\x1b[33m[NapCat]\x1b[0m 暂存配置文件...\r\n');
             await Process.run('${RuntimeEnvir.binPath}/busybox', [
               'tar',
               '-czf',
@@ -317,7 +317,7 @@ class InstallerService {
               'napcat/config',
             ]);
           }
-          onLog?.call('[NapCat] 清理旧目录...\r\n');
+          onLog?.call('\x1b[33m[NapCat]\x1b[0m 清理旧目录...\r\n');
           await Process.run(
               '${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', napcatDir.path]);
         }
@@ -389,7 +389,7 @@ class InstallerService {
       await Directory('${scripts.ubuntuPath}/var/lib/apt/lists/partial').create(recursive: true);
       await Directory(RuntimeEnvir.tmpPath).create(recursive: true);
 
-      onLog?.call('[DNS] 写入域名解析配置\r\n');
+      onLog?.call('\x1b[32m[DNS]\x1b[0m 写入域名解析配置\r\n');
       final resolvConf = File('${scripts.ubuntuPath}/etc/resolv.conf');
       final dnsLines =
           '${MirrorRegistry.dnsNameservers.map((ip) => 'nameserver $ip').join('\n')}\n';
@@ -552,7 +552,7 @@ class InstallerService {
 
   static Future<void> _writeSourcesList(String mirrorUrl, Function(String)? onLog) async {
     try {
-      onLog?.call('[源] 软件源: $mirrorUrl\r\n');
+      onLog?.call('\x1b[32m[源]\x1b[0m 软件源: $mirrorUrl\r\n');
       final sourcesList = File('${scripts.ubuntuPath}/etc/apt/sources.list');
       await sourcesList.writeAsString(
         'deb $mirrorUrl noble main restricted universe multiverse\n'
@@ -587,7 +587,7 @@ class InstallerService {
     for (int i = 0; i < MirrorRegistry.aptPortMirrors.length; i++) {
       final mirror = MirrorRegistry.aptPortMirrors[i];
       if (i > 0) {
-        onLog?.call('[源] 切换备用源: $mirror\r\n');
+        onLog?.call('\x1b[33m[源]\x1b[0m 切换备用源: $mirror\r\n');
         await _writeSourcesList(mirror, null);
       }
 
@@ -620,7 +620,7 @@ class InstallerService {
     for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
       final target = '$mirror$releaseUrl';
       final label = mirror.isEmpty ? '官方源' : mirror;
-      onLog?.call('[下载] uv ($label)...\r\n');
+      onLog?.call('\x1b[36m[下载]\x1b[0m uv ($label)...\r\n');
 
       if (onLog != null) {
         final process = await Process.start(
@@ -651,7 +651,7 @@ class InstallerService {
       return false;
     }
 
-    onLog?.call('[解压] uv 解压中...\r\n');
+    onLog?.call('\x1b[32m[解压]\x1b[0m uv 解压中...\r\n');
     final extractRes = await Process.run('${RuntimeEnvir.binPath}/busybox', [
       'tar',
       '-xzf',
@@ -689,7 +689,7 @@ class InstallerService {
           ? customRepoUrl
           : '${mirror}https://github.com/Mai-with-u/MaiBot.git';
       final label = mirror.isEmpty ? '官方源' : mirror;
-      onLog?.call('[下载] MaiBot 源码 ($label)...\r\n');
+      onLog?.call('\x1b[36m[下载]\x1b[0m MaiBot 源码 ($label)...\r\n');
       await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', tmpDir]);
 
       final success = await _runInProot(
@@ -729,7 +729,7 @@ class InstallerService {
 
     try {
       onProgress('恢复 NapCat 配置...');
-      onLog?.call('[NapCat] 恢复配置文件...\r\n');
+      onLog?.call('\x1b[36m[NapCat]\x1b[0m 恢复配置文件...\r\n');
 
       await Directory('${scripts.ubuntuPath}/root/napcat').create(recursive: true);
       final res = await Process.run('${RuntimeEnvir.binPath}/busybox', [
@@ -741,7 +741,7 @@ class InstallerService {
       ]);
 
       if (res.exitCode == 0) {
-        onLog?.call('[NapCat] 配置恢复成功\r\n');
+        onLog?.call('\x1b[32m[NapCat]\x1b[0m 配置恢复成功\r\n');
         Log.i('NapCat 配置恢复成功', tag: 'InstallerService');
       } else {
         onLog?.call('\x1b[31m[错误]\x1b[0m NapCat 配置恢复失败: ${res.stderr}\r\n');
@@ -753,7 +753,7 @@ class InstallerService {
       try {
         if (await tempBackupFile.exists()) {
           await tempBackupFile.delete();
-          onLog?.call('[NapCat] 清理临时备份\r\n');
+          onLog?.call('\x1b[32m[NapCat]\x1b[0m 清理临时备份\r\n');
         }
       } catch (e) {
         Log.e('清理 NapCat 临时备份失败: $e', tag: 'InstallerService');

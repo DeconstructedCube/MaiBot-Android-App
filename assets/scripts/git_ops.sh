@@ -14,7 +14,7 @@ git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null
 
 sync_uv_if_present() {
     if [ -f /root/.local/bin/uv ]; then
-        echo "[UV] 检查并同步 Python 依赖库..."
+        echo -e "\033[36m[UV]\033[0m 检查 Python 依赖..."
         /root/.local/bin/uv sync --no-progress
     fi
 }
@@ -34,21 +34,21 @@ case "$ACTION" in
         git -c gc.auto=0 fetch origin 2>/dev/null || true
         ;;
     pull)
-        echo "[GIT] 同步远端最新分支与 Tag..."
+        echo -e "\033[36m[GIT]\033[0m 同步远程分支与标签..."
         git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" --tags --prune 2>/dev/null || \
         git -c gc.auto=0 fetch --all --prune 2>/dev/null || true
         git stash 2>/dev/null || true
-        echo "[GIT] 合并最新代码..."
+        echo -e "\033[36m[GIT]\033[0m 拉取最新代码..."
         git -c gc.auto=0 pull --rebase=false || git -c gc.auto=0 pull --rebase=false origin main || true
         sync_uv_if_present
         ;;
     switch_branch)
-        echo "[GIT] 抓取目标分支 $TARGET 远程引用..."
+        echo -e "\033[36m[GIT]\033[0m 抓取远程分支 $TARGET..."
         git -c gc.auto=0 fetch origin "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || \
         git -c gc.auto=0 fetch origin "$TARGET" 2>/dev/null || \
         git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
         git stash 2>/dev/null || true
-        echo "[GIT] 正在检出分支 $TARGET..."
+        echo -e "\033[36m[GIT]\033[0m 检出分支 $TARGET..."
         if git show-ref --verify --quiet "refs/heads/$TARGET"; then
             git -c gc.auto=0 checkout "$TARGET" || git -c gc.auto=0 checkout -f "$TARGET"
         elif git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
@@ -56,20 +56,20 @@ case "$ACTION" in
             git -c gc.auto=0 checkout -B "$TARGET" "origin/$TARGET" || \
             git -c gc.auto=0 checkout -f "$TARGET"
         else
-            echo "[GIT] 错误: 未能在本地或远程找到分支 $TARGET" >&2
+            echo -e "\033[31m[错误]\033[0m 未在本地或远程找到分支 $TARGET" >&2
             exit 1
         fi
-        echo "[GIT] 同步分支最新提交..."
+        echo -e "\033[36m[GIT]\033[0m 同步分支最新提交..."
         git -c gc.auto=0 pull --rebase=false origin "$TARGET" 2>/dev/null || git -c gc.auto=0 pull --rebase=false 2>/dev/null || true
         sync_uv_if_present
         ;;
     switch_tag)
-        echo "[GIT] 抓取标签 $TARGET..."
+        echo -e "\033[36m[GIT]\033[0m 抓取标签 $TARGET..."
         git -c gc.auto=0 fetch --tags --force origin 2>/dev/null || \
         git -c gc.auto=0 fetch origin "refs/tags/$TARGET:refs/tags/$TARGET" 2>/dev/null || \
         git -c gc.auto=0 fetch --tags 2>/dev/null || true
         git stash 2>/dev/null || true
-        echo "[GIT] 正在检出 Tag: $TARGET..."
+        echo -e "\033[36m[GIT]\033[0m 检出标签: $TARGET..."
         git -c gc.auto=0 checkout "tags/$TARGET" || git -c gc.auto=0 checkout -f "tags/$TARGET" || git -c gc.auto=0 checkout "$TARGET"
         sync_uv_if_present
         ;;

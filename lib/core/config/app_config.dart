@@ -104,7 +104,7 @@ class MirrorRegistry {
 
   /// 在安装流水线开始前，并发探测 GitHub 与 PyPI 线路，优选最佳网络线路（挂梯子优先直连）
   static Future<void> probeFastestMirrors({void Function(String)? onLog}) async {
-    onLog?.call('[网络] 测试网络连接...\r\n');
+    onLog?.call('\x1b[36m[网络]\x1b[0m 测试网络连接...\r\n');
 
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
 
@@ -143,7 +143,7 @@ class MirrorRegistry {
       if (directResult.ok && directResult.latency <= 2000) {
         _isDirectNetwork = true;
         _activeGithubPrefixMirrors = ['', ...candidatePrefixes.where((p) => p.isNotEmpty)];
-        onLog?.call('[网络] GitHub: 官方源 (${directResult.latency}ms)\r\n');
+        onLog?.call('\x1b[32m[网络]\x1b[0m GitHub: 官方源 (${directResult.latency}ms)\r\n');
       } else {
         _isDirectNetwork = false;
         final validMirrors = githubResults.where((r) => r.ok).toList()
@@ -157,9 +157,9 @@ class MirrorRegistry {
           _activeGithubPrefixMirrors = sortedPrefixes;
           final best = validMirrors.first;
           final label = best.prefix.isEmpty ? '官方源' : best.prefix;
-          onLog?.call('[网络] GitHub: $label (${best.latency}ms)\r\n');
+          onLog?.call('\x1b[32m[网络]\x1b[0m GitHub: $label (${best.latency}ms)\r\n');
         } else {
-          onLog?.call('[网络] 测速超时，使用默认源\r\n');
+          onLog?.call('\x1b[33m[网络]\x1b[0m 测速超时，使用默认源\r\n');
         }
       }
     } catch (_) {}
@@ -192,7 +192,7 @@ class MirrorRegistry {
         ..sort((a, b) => a.latency.compareTo(b.latency));
       if (validPypi.isNotEmpty) {
         _activePypiMirror = validPypi.first.url;
-        onLog?.call('[PyPI] 软件源: $_activePypiMirror (${validPypi.first.latency}ms)\r\n');
+        onLog?.call('\x1b[32m[PyPI]\x1b[0m 软件源: $_activePypiMirror (${validPypi.first.latency}ms)\r\n');
       }
     } catch (_) {} finally {
       client.close();
