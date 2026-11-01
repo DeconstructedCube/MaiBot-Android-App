@@ -77,7 +77,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     if (status.isGranted) {
       setState(() => _notificationGranted = true);
     } else if (status.isPermanentlyDenied) {
-      _showOpenSettingsDialog('通知权限', '请在系统设置中开启通知权限，以便前台服务正常运行。');
+      _showOpenSettingsDialog('通知权限', '请在系统设置中开启通知权限以保持前台服务运行。');
     }
     _checkAllPermissions();
   }
@@ -94,7 +94,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     if (normalStorage.isGranted) {
       setState(() => _storageGranted = true);
     } else if (normalStorage.isPermanentlyDenied || status.isPermanentlyDenied) {
-      _showOpenSettingsDialog('存储权限', '请在系统设置中授予存储权限，用于管理应用运行环境和数据备份。');
+      _showOpenSettingsDialog('存储权限', '请在系统设置中授予存储权限用于环境配置与备份。');
     }
     _checkAllPermissions();
   }
@@ -174,7 +174,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  '应用需要以下权限以确保后台服务稳定运行和数据存储。请先授予必要权限。',
+                                  'MaiBot 需在后台常驻运行，请授予必要权限。',
                                   style: TextStyle(
                                     fontSize: 13,
                                     height: 1.45,
@@ -192,7 +192,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.notifications_none_rounded,
                           title: '通知权限',
-                          description: '用于在状态栏显示常驻前台服务，防止后台进程被系统终止。',
+                          description: '保持后台服务常驻运行。',
                           isGranted: _notificationGranted,
                           isRequired: true,
                           onRequest: () => unawaited(_requestNotificationPermission()),
@@ -202,19 +202,19 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.folder_open_rounded,
                           title: '存储权限',
-                          description: '用于读写外部存储中的备份文件。',
+                          description: '读写备份文件与容器环境。',
                           isGranted: _storageGranted,
                           isRequired: false,
                           onRequest: () => unawaited(_requestStoragePermission()),
                         ),
                         const SizedBox(height: 20),
-                        _buildSectionHeader(context, '可选保活设置'),
+                        _buildSectionHeader(context, '可选保活'),
                         const SizedBox(height: 8),
                         _buildPermissionItem(
                           context: context,
                           icon: Icons.battery_charging_full_rounded,
                           title: '忽略电池优化',
-                          description: '允许应用在系统休眠时保持后台网络和进程运行。',
+                          description: '允许息屏时保持后台运行。',
                           isGranted: _batteryOptimizationIgnored,
                           isRequired: false,
                           onRequest: () => unawaited(_requestBatteryOptimization()),
@@ -224,7 +224,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.power_settings_new_rounded,
                           title: '系统省电策略',
-                          description: '建议在系统设置中将应用的省电策略设为无限制。此状态无法自动检测。',
+                          description: '建议将应用省电策略设为无限制。',
                           actionText: '去设置',
                           onAction: () => openAppSettings(),
                         ),
@@ -233,7 +233,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
                           context: context,
                           icon: Icons.lock_outline_rounded,
                           title: '后台任务锁定',
-                          description: '在多任务界面长按或下拉应用卡片添加锁定，防止被一键清理。此状态无法自动检测。',
+                          description: '在多任务列表中锁定卡片，防止误清理。',
                           actionText: null,
                           onAction: null,
                         ),

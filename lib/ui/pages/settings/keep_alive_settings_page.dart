@@ -42,7 +42,6 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
     if (_enableWifiLock.get() == null) {
       _enableWifiLock.set(true);
     }
-    // 避免在页面推入路由转场动画期间执行密集 IPC/Channel 阻塞导致卡顿
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _checkAllStatus();
@@ -131,6 +130,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
       openAppSettings();
     }
   }
+
   Future<void> _checkAutoStartStatus() async {
     if (!Platform.isAndroid) return;
     try {
@@ -160,6 +160,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
       Log.e('设置自启动状态失败: $e', tag: 'KeepAliveSettingsPage');
     }
   }
+
   Future<void> _checkShizukuStatus() async {
     if (!Platform.isAndroid) return;
     try {
@@ -185,7 +186,6 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
         return;
       }
 
-      // 并行执行 Shizuku Shell 命令，大幅缩短等待时间避免 UI 掉帧
       final results = await Future.wait([
         _shizukuApi.runCommand('dumpsys deviceidle whitelist'),
         _shizukuApi.runCommand('cmd appops get ${Config.packageName} RUN_ANY_IN_BACKGROUND'),
@@ -444,7 +444,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               leading: const Icon(Icons.power_settings_new_rounded, size: 22),
               title: Text('系统省电策略', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '建议在系统设置中将应用省电策略设为无限制。此状态无法自动检测。',
+                '建议在系统设置中将应用省电策略设为无限制。',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               trailing: OutlinedButton(
@@ -461,9 +461,9 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
             const Divider(height: 1, indent: 56),
             SwitchListTile(
               secondary: const Icon(Icons.wifi_lock_rounded, size: 22),
-              title: Text('保持 WLAN 连接', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
+              title: Text('保持无线连接', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '息屏时保持 Wi-Fi 连接稳定',
+                '息屏时保持网络连接稳定',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               value: _enableWifiLock.get() ?? true,
@@ -490,8 +490,8 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               title: Text('无障碍保活服务', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
                 _isAccessibilityEnabled
-                    ? '已开启，防止从最近任务列表清除时终止后台服务'
-                    : '未开启，开启后可防止划掉任务卡片时误杀后台服务',
+                    ? '已开启，防止划掉任务卡片时误关前台服务'
+                    : '未开启，开启后可防止划掉任务卡片时误关前台服务',
                 style: TextStyle(
                   fontSize: 12,
                   color: _isAccessibilityEnabled ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.error,
@@ -516,7 +516,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               leading: const Icon(Icons.lock_outline_rounded, size: 22),
               title: Text('多任务卡片加锁', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '在多任务列表中长按或下拉卡片添加锁定，防止被一键清理。此状态无法自动检测。',
+                '在多任务列表中锁定卡片，防止被清理。',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
@@ -574,9 +574,9 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
             const Divider(height: 1, indent: 56),
             SwitchListTile(
               secondary: const Icon(Icons.flash_on_rounded, size: 22),
-              title: Text('写入 Doze 白名单', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
+              title: Text('系统休眠白名单', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '通过 Shell 命令将应用添加至系统白名单',
+                '将应用加入系统电池优化白名单',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               value: _shizukuDozeWhitelist,
@@ -587,7 +587,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               secondary: const Icon(Icons.tune_rounded, size: 22),
               title: Text('后台无限制运行', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '配置 AppOps 允许后台持续运行',
+                '允许应用在后台持续运行',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               value: _shizukuRunAnyInBackground,
@@ -598,7 +598,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
               secondary: const Icon(Icons.memory_rounded, size: 22),
               title: Text('提高幻影进程限制', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: theme.colorScheme.onSurface)),
               subtitle: Text(
-                '将系统限制提高至 64，适用于 Android 12 及以上',
+                '将系统限制提高至 64',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
               ),
               value: _shizukuPhantomProcessLimit,

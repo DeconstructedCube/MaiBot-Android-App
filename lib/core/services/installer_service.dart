@@ -56,7 +56,7 @@ class InstallerService {
           await ubuntuDir.delete(recursive: true);
         } catch (_) {}
       }
-      reportStage(InstallStage.extractingRootfs, '正在解压 Ubuntu 根文件系统...');
+      reportStage(InstallStage.extractingRootfs, '解压 Ubuntu 系统...');
       try {
         final archivePath = '${RuntimeEnvir.homePath}/${Config.ubuntuFileName}';
         final archiveFile = File(archivePath);
@@ -66,8 +66,8 @@ class InstallerService {
 
         // 1.1 校验或从应用 assets 释放镜像归档
         if (!await archiveFile.exists() || await archiveFile.length() < 1000000) {
-          onLog?.call('\x1b[36m[系统]\x1b[0m 正在从应用安装包准备 Ubuntu 镜像归档 (62MB)...\r\n');
-          onProgress('正在释放 Ubuntu 镜像归档 (62MB)...', 0.0);
+          onLog?.call('[系统] 准备镜像文件 (62MB)...\r\n');
+          onProgress('准备镜像文件...', 0.0);
           try {
             final ByteData byteData = await rootBundle.load('assets/${Config.ubuntuFileName}');
             final Uint8List picBytes = byteData.buffer.asUint8List(
@@ -77,16 +77,16 @@ class InstallerService {
             await archiveFile.parent.create(recursive: true);
             await archiveFile.writeAsBytes(picBytes, flush: true);
             final mb = (picBytes.length / (1024 * 1024)).toStringAsFixed(1);
-            onLog?.call('\x1b[32m[系统]\x1b[0m 镜像归档释放完成，大小: ${mb}MB\r\n');
+            onLog?.call('[系统] 镜像已就绪 (${mb}MB)\r\n');
           } catch (e) {
-            onLog?.call('\x1b[31m[错误]\x1b[0m 无法从 assets 读取镜像归档: $e\r\n');
+            onLog?.call('\x1b[31m[错误]\x1b[0m 读取镜像文件失败: $e\r\n');
             return false;
           }
         }
 
         // 1.2 执行 tar 解压并实时流式输出日志与平滑进度
         final args = ['tar', '-xJvf', archivePath, '-C', targetPath];
-        onLog?.call('\x1b[36m[解压]\x1b[0m 正在解压 Ubuntu 根文件系统 (共 $totalRootfsFiles 个文件)...\r\n');
+        onLog?.call('[解压] 解压系统文件...\r\n');
 
         final busyboxPath = '${RuntimeEnvir.binPath}/busybox';
         if (onLog != null) {
@@ -102,18 +102,16 @@ class InstallerService {
             final double ratio = (extractedFiles / totalRootfsFiles).clamp(0.0, 1.0);
             final int currentPctInt = (ratio * 100).toInt();
 
-            // 主看板平滑更新进度（每 100 个文件更新一次，内存操作不写终端）
             if (extractedFiles % 100 == 0 || extractedFiles == totalRootfsFiles) {
               final String pct = (ratio * 100).toStringAsFixed(1);
-              onProgress('正在解压 Ubuntu 根文件系统 ($pct%, $extractedFiles/$totalRootfsFiles)...', ratio);
+              onProgress('解压系统文件 $pct%...', ratio);
             }
 
-            // 终端仅输出阶段性里程碑进度（每 10% 输出一行，杜绝万级文件名刷屏）
             if ((currentPctInt > lastLoggedPct && currentPctInt % 10 == 0) ||
                 extractedFiles == totalRootfsFiles) {
               lastLoggedPct = currentPctInt;
               final String pct = (ratio * 100).toStringAsFixed(1);
-              onLog('\x1b[32m[解压进度]\x1b[0m $pct% ($extractedFiles/$totalRootfsFiles)\r\n');
+              onLog('\x1b[32m[解压]\x1b[0m $pct% ($extractedFiles/$totalRootfsFiles)\r\n');
             }
           });
 
@@ -124,17 +122,17 @@ class InstallerService {
             if (!line.contains('chown') &&
                 !line.contains('mknod') &&
                 !line.contains('Operation not permitted')) {
-              onLog('\x1b[31m[tar 警告]\x1b[0m $line\r\n');
+              onLog('\x1b[31m[警告]\x1b[0m $line\r\n');
             }
           });
 
           final exitCode = await process.exitCode;
           if (exitCode != 0) {
-            onLog('\x1b[31m[错误]\x1b[0m tar 解压异常终止，退出代码: $exitCode\r\n');
+            onLog('\x1b[31m[错误]\x1b[0m 解压失败，退出码: $exitCode\r\n');
             return false;
           }
-          onLog('\x1b[32m[解压完成]\x1b[0m 100.0% (共释放 $extractedFiles 个文件)\r\n');
-          onProgress('Ubuntu 根文件系统解压完成', 1.0);
+          onLog('\x1b[32m[解压]\x1b[0m 解压完成\r\n');
+          onProgress('解压完成', 1.0);
         } else {
           final res = await Process.run(busyboxPath, args);
           if (res.exitCode != 0) {
@@ -152,57 +150,57 @@ class InstallerService {
         }
         if (await extractedDir.exists()) {
           await extractedDir.rename(scripts.ubuntuPath);
-          onLog?.call('\x1b[32m[系统]\x1b[0m 根文件系统就位 -> ${scripts.ubuntuPath}\r\n');
+          onLog?.call('[系统] 安装路径: ${scripts.ubuntuPath}\r\n');
         }
 
         final bashCheck = File('${scripts.ubuntuPath}/bin/bash');
         if (!await bashCheck.exists()) {
-          onLog?.call('\x1b[31m[错误]\x1b[0m 校验失败: 未在 ${scripts.ubuntuPath} 找到 bin/bash\r\n');
+          onLog?.call('\x1b[31m[错误]\x1b[0m 校验失败: 未找到 bin/bash\r\n');
           return false;
         }
 
         await rootfsMarker.writeAsString('ready');
-        onLog?.call('\x1b[32m[系统]\x1b[0m 根文件系统校验通过，标记已写入 (.rootfs_ready)\r\n');
+        onLog?.call('[系统] 校验通过\r\n');
 
         // 1.4 清理 62MB 安装包归档
         try {
           if (await archiveFile.exists()) {
             await archiveFile.delete();
-            onLog?.call('\x1b[32m[系统]\x1b[0m 已清理临时安装包归档，释放存储空间\r\n');
+            onLog?.call('[系统] 清理临时镜像文件\r\n');
           }
         } catch (_) {}
       } catch (e) {
-        onLog?.call('\x1b[31m[错误]\x1b[0m 解压过程发生异常: $e\r\n');
+        onLog?.call('\x1b[31m[错误]\x1b[0m 解压异常: $e\r\n');
         Log.e('解压过程发生异常: $e', tag: 'InstallerService');
         return false;
       }
     }
 
-    // 2. DNS 与系统环境注入（仅在必要时单次执行，绝不重复刷屏）
-    reportStage(InstallStage.configuringNetwork, '配置网络代理与系统参数...');
+    // 2. 配置环境（仅单次执行）
+    reportStage(InstallStage.configuringNetwork, '配置系统环境...');
     await _writeNetworkConfigs(onLog);
 
-    // 2.1 智能评估网络环境，测速优选镜像与直连线路（挂梯子优先直连，解决 ghfast.top 握手失败被拖累问题）
+    // 2.1 测速选线
     await MirrorRegistry.probeFastestMirrors(onLog: onLog);
 
-    // 2.2 独立自愈校验系统依赖（git, curl, wget, sudo, aria2, build-essential）
+    // 2.2 基础依赖安装
     final depSuccess = await _ensureSystemDependencies(
       (msg) => reportStage(InstallStage.checkingSystemDeps, msg),
       onLog,
     );
     if (!depSuccess) {
-      Log.e('系统基础依赖修复/安装失败', tag: 'InstallerService');
+      Log.e('系统基础依赖安装失败', tag: 'InstallerService');
       return false;
     }
 
     try {
-      // 3. 校验并安装 uv
+      // 3. 安装 uv
       final uvExecutable = File('${scripts.ubuntuPath}/root/.local/bin/uv');
       final uvxExecutable = File('${scripts.ubuntuPath}/root/.local/bin/uvx');
       if (!await uvExecutable.exists() ||
           await uvExecutable.length() < 10000 ||
           !await uvxExecutable.exists()) {
-        reportStage(InstallStage.installingUv, '正在下载并安装 uv...');
+        reportStage(InstallStage.installingUv, '安装 uv 工具...');
         final success = await _downloadAndInstallUv(onLog);
         if (!success) return false;
       }
@@ -217,12 +215,12 @@ class InstallerService {
         if (await maibotDir.exists()) {
           await _runInProot('rm -rf /root/MaiBot');
         }
-        reportStage(InstallStage.cloningMaibot, '正在获取 MaiBot 源码...');
+        reportStage(InstallStage.cloningMaibot, '下载 MaiBot 源码...');
         final success = await _cloneMaibot(onLog);
         if (!success) return false;
       }
 
-      // 4.5 默认适配器克隆（利用优选线路并在每次重试前清理残留目录）
+      // 4.5 默认适配器克隆
       final pluginsDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins');
       final adapterDir = Directory('${pluginsDir.path}/MaiBot-Napcat-Adapter');
       final adapterMain = File('${adapterDir.path}/adapter.py');
@@ -238,13 +236,13 @@ class InstallerService {
         if (await adapterDir.exists()) {
           await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
         }
-        reportStage(InstallStage.cloningAdapter, '安装默认适配器插件...');
+        reportStage(InstallStage.cloningAdapter, '安装适配器插件...');
         bool cloneSuccess = false;
         for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
           final adapterUrl =
               '${mirror}https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git';
-          final label = mirror.isEmpty ? '官方直连' : mirror;
-          onLog?.call('\x1b[36m[适配器]\x1b[0m 正在从 $label 获取适配器插件...\r\n');
+          final label = mirror.isEmpty ? '官方源' : mirror;
+          onLog?.call('[下载] 适配器 ($label)...\r\n');
           await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
           final res = await _runInProot(
             'git -c gc.auto=0 clone --depth=1 --branch main $adapterUrl /root/MaiBot/plugins/MaiBot-Napcat-Adapter',
@@ -257,7 +255,7 @@ class InstallerService {
           }
         }
         if (!cloneSuccess) {
-          onLog?.call('\x1b[31m[错误]\x1b[0m 适配器插件安装失败，请检查网络连接\r\n');
+          onLog?.call('\x1b[31m[错误]\x1b[0m 适配器安装失败，请检查网络\r\n');
           return false;
         }
 
@@ -267,7 +265,7 @@ class InstallerService {
         }
       }
 
-      // 5. 同步 Python 依赖库（支持主备源自动切换与重试，彻底防止 jieba 等源码构建阶段卡死）
+      // 5. 同步 Python 依赖库
       final venvDir = Directory('${scripts.ubuntuPath}/root/MaiBot/.venv');
       final venvMarker = File('${scripts.ubuntuPath}/root/MaiBot/.venv_sync_ready');
       final bool hasVenv = await venvDir.exists() && await venvMarker.exists();
@@ -277,7 +275,7 @@ class InstallerService {
         }
         reportStage(
           InstallStage.syncingPythonEnv,
-          '正在同步 Python 依赖库...',
+          '安装 Python 依赖...',
         );
         final pypiPrimary = MirrorRegistry.activePypiMirror;
         final uvSyncCmd = 'cd /root/MaiBot && '
@@ -288,7 +286,7 @@ class InstallerService {
             'fi';
         var success = await _runInProot(uvSyncCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         if (!success) {
-          onLog?.call('\x1b[33m[Python]\x1b[0m 主源同步受阻，自动切换至多镜像源与官方源双向重试...\r\n');
+          onLog?.call('\x1b[33m[Python]\x1b[0m 依赖同步重试中...\r\n');
           final fallbackCmd = 'cd /root/MaiBot && /root/.local/bin/uv sync --color always --network-timeout 90 --index-url https://pypi.org/simple --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
           success = await _runInProot(fallbackCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         }
@@ -309,7 +307,7 @@ class InstallerService {
         final configDir = Directory('${scripts.ubuntuPath}/root/napcat/config');
         if (await napcatDir.exists()) {
           if (!await tempBackup.exists() && await configDir.exists()) {
-            onLog?.call('\x1b[33m[NapCat]\x1b[0m 检测到未暂存的 NapCat 配置，正在暂存数据...\r\n');
+            onLog?.call('[NapCat] 暂存配置文件...\r\n');
             await Process.run('${RuntimeEnvir.binPath}/busybox', [
               'tar',
               '-czf',
@@ -319,17 +317,16 @@ class InstallerService {
               'napcat/config',
             ]);
           }
-          onLog?.call('\x1b[33m[NapCat]\x1b[0m 清理旧版 NapCat 目录以供全新安装...\r\n');
+          onLog?.call('[NapCat] 清理旧目录...\r\n');
           await Process.run(
               '${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', napcatDir.path]);
         }
 
-        reportStage(InstallStage.installingNapcat, '正在清理依赖并下载 NapCatQQ 组件...');
+        reportStage(InstallStage.installingNapcat, '安装 NapCat 组件...');
         await _runInProot(
-          'echo "[APT] 检查并修复破损的系统包..." && dpkg --configure -a || true && apt-get --fix-broken install -y',
+          'dpkg --configure -a || true && apt-get --fix-broken install -y',
           onLog: onLog,
         );
-        reportStage(InstallStage.installingNapcat, '正在部署并执行 NapCatQQ 安装脚本...');
         final targetNapcatSh = '${scripts.ubuntuPath}/root/napcat.sh';
         await _deployAssetScript('assets/scripts/napcat_install.sh', targetNapcatSh);
 
@@ -340,7 +337,7 @@ class InstallerService {
             final url =
                 '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
             final res = await _runInProot(
-              'echo "[网络] 尝试获取安装脚本: $url" && curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
+              'curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
               onLog: onLog,
             );
             if (res) {
@@ -360,7 +357,7 @@ class InstallerService {
         );
       }
 
-      reportStage(InstallStage.completed, '初始化完成，正在准备启动...');
+      reportStage(InstallStage.completed, '准备启动服务...');
       return true;
     } catch (e) {
       Log.e('后续配置执行异常: $e', tag: 'InstallerService');
@@ -392,7 +389,7 @@ class InstallerService {
       await Directory('${scripts.ubuntuPath}/var/lib/apt/lists/partial').create(recursive: true);
       await Directory(RuntimeEnvir.tmpPath).create(recursive: true);
 
-      onLog?.call('\x1b[32m[DNS]\x1b[0m 正在配置容器 DNS 解析服务...\r\n');
+      onLog?.call('[DNS] 写入域名解析配置\r\n');
       final resolvConf = File('${scripts.ubuntuPath}/etc/resolv.conf');
       final dnsLines =
           '${MirrorRegistry.dnsNameservers.map((ip) => 'nameserver $ip').join('\n')}\n';
@@ -431,7 +428,6 @@ class InstallerService {
         'path-exclude /usr/share/locale/*\n',
       );
 
-      // 部署外置化的 apt-fast、curl/wget 透明加速包装器与 Git 运维脚本
       final localBinDir = Directory('${scripts.ubuntuPath}/usr/local/bin');
       await localBinDir.create(recursive: true);
 
@@ -489,7 +485,6 @@ class InstallerService {
         'default = true\n',
       );
 
-      // 保持 fake proc 节点初始化（含关键的 cap_last_cap 与 inotify_max_user_watches）
       final procDir = Directory('${scripts.ubuntuPath}/proc');
       await procDir.create(recursive: true);
       final loadavg = File('${procDir.path}/.loadavg');
@@ -557,7 +552,7 @@ class InstallerService {
 
   static Future<void> _writeSourcesList(String mirrorUrl, Function(String)? onLog) async {
     try {
-      onLog?.call('\x1b[32m[APT]\x1b[0m 配置镜像源 -> $mirrorUrl\r\n');
+      onLog?.call('[源] 软件源: $mirrorUrl\r\n');
       final sourcesList = File('${scripts.ubuntuPath}/etc/apt/sources.list');
       await sourcesList.writeAsString(
         'deb $mirrorUrl noble main restricted universe multiverse\n'
@@ -587,12 +582,12 @@ class InstallerService {
       return true;
     }
 
-    onProgress('正在检查并安装系统运行依赖...');
+    onProgress('检查系统依赖...');
 
     for (int i = 0; i < MirrorRegistry.aptPortMirrors.length; i++) {
       final mirror = MirrorRegistry.aptPortMirrors[i];
       if (i > 0) {
-        onLog?.call('\x1b[33m[APT]\x1b[0m 切换备用镜像源 -> $mirror\r\n');
+        onLog?.call('[源] 切换备用源: $mirror\r\n');
         await _writeSourcesList(mirror, null);
       }
 
@@ -624,8 +619,8 @@ class InstallerService {
     bool downloaded = false;
     for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
       final target = '$mirror$releaseUrl';
-      final label = mirror.isEmpty ? '官方直连' : mirror;
-      onLog?.call('\x1b[32m[UV]\x1b[0m 尝试从 $label 下载...\r\n');
+      final label = mirror.isEmpty ? '官方源' : mirror;
+      onLog?.call('[下载] uv ($label)...\r\n');
 
       if (onLog != null) {
         final process = await Process.start(
@@ -652,11 +647,11 @@ class InstallerService {
     }
 
     if (!downloaded) {
-      onLog?.call('\x1b[31m[UV]\x1b[0m 所有下载线路均未响应，请检查网络\r\n');
+      onLog?.call('\x1b[31m[错误]\x1b[0m uv 下载失败，请检查网络\r\n');
       return false;
     }
 
-    onLog?.call('\x1b[32m[UV]\x1b[0m 下载完成，正在解压...\r\n');
+    onLog?.call('[解压] uv 解压中...\r\n');
     final extractRes = await Process.run('${RuntimeEnvir.binPath}/busybox', [
       'tar',
       '-xzf',
@@ -693,8 +688,8 @@ class InstallerService {
       final repo = customRepoUrl.isNotEmpty
           ? customRepoUrl
           : '${mirror}https://github.com/Mai-with-u/MaiBot.git';
-      final label = mirror.isEmpty ? '官方直连' : mirror;
-      onLog?.call('\x1b[36m[MaiBot]\x1b[0m 正在从 $label 获取 MaiBot 源码...\r\n');
+      final label = mirror.isEmpty ? '官方源' : mirror;
+      onLog?.call('[下载] MaiBot 源码 ($label)...\r\n');
       await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', tmpDir]);
 
       final success = await _runInProot(
@@ -733,8 +728,8 @@ class InstallerService {
     if (!await tempBackupFile.exists()) return;
 
     try {
-      onProgress('正在恢复 NapCat 数据与配置...');
-      onLog?.call('\x1b[32m[NapCat]\x1b[0m 发现一次性暂存备份，正在恢复配置...\r\n');
+      onProgress('恢复 NapCat 配置...');
+      onLog?.call('[NapCat] 恢复配置文件...\r\n');
 
       await Directory('${scripts.ubuntuPath}/root/napcat').create(recursive: true);
       final res = await Process.run('${RuntimeEnvir.binPath}/busybox', [
@@ -746,23 +741,22 @@ class InstallerService {
       ]);
 
       if (res.exitCode == 0) {
-        onLog?.call('\x1b[32m[NapCat]\x1b[0m NapCat 配置数据恢复成功！\r\n');
-        Log.i('NapCat 临时数据已成功恢复', tag: 'InstallerService');
+        onLog?.call('[NapCat] 配置恢复成功\r\n');
+        Log.i('NapCat 配置恢复成功', tag: 'InstallerService');
       } else {
-        onLog?.call('\x1b[31m[NapCat]\x1b[0m 恢复 NapCat 配置数据失败: ${res.stderr}\r\n');
-        Log.e('恢复 NapCat 配置数据失败: ${res.stderr}', tag: 'InstallerService');
+        onLog?.call('\x1b[31m[错误]\x1b[0m NapCat 配置恢复失败: ${res.stderr}\r\n');
+        Log.e('NapCat 配置恢复失败: ${res.stderr}', tag: 'InstallerService');
       }
     } catch (e) {
-      Log.e('恢复 NapCat 临时备份异常: $e', tag: 'InstallerService');
+      Log.e('恢复 NapCat 备份异常: $e', tag: 'InstallerService');
     } finally {
       try {
         if (await tempBackupFile.exists()) {
           await tempBackupFile.delete();
-          onLog?.call('\x1b[32m[NapCat]\x1b[0m 一次性暂存备份已清理。\r\n');
-          Log.i('已清理 NapCat 一次性临时备份: $napcatTempBackupPath', tag: 'InstallerService');
+          onLog?.call('[NapCat] 清理临时备份\r\n');
         }
       } catch (e) {
-        Log.e('清理 NapCat 一次性临时备份失败: $e', tag: 'InstallerService');
+        Log.e('清理 NapCat 临时备份失败: $e', tag: 'InstallerService');
       }
     }
   }
@@ -787,13 +781,13 @@ class InstallerService {
           'napcat/config',
         ]);
         if (tarRes.exitCode == 0) {
-          Log.i('NapCat 配置已暂存至: $napcatTempBackupPath', tag: 'InstallerService');
+          Log.i('NapCat 配置已暂存', tag: 'InstallerService');
         } else {
           Log.w('NapCat 配置暂存失败: ${tarRes.stderr}', tag: 'InstallerService');
         }
       }
 
-      Log.i('正在卸载 LinuxQQ（保留系统依赖）...', tag: 'InstallerService');
+      Log.i('卸载 LinuxQQ...', tag: 'InstallerService');
       await _runInProot(
         'dpkg -P --force-depends linuxqq 2>/dev/null || dpkg -r --force-depends linuxqq 2>/dev/null || true',
         timeout: const Duration(seconds: 30),
@@ -804,7 +798,7 @@ class InstallerService {
         await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', qqDir.path]);
       }
 
-      Log.i('正在清理 NapCat 目录与启动脚本...', tag: 'InstallerService');
+      Log.i('清理 NapCat 目录与脚本...', tag: 'InstallerService');
       final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
       if (await napcatDir.exists()) {
         await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', napcatDir.path]);
@@ -820,7 +814,7 @@ class InstallerService {
         await installerScript.delete();
       }
 
-      Log.i('NapCat 与 LinuxQQ 卸载完成，配置已暂存', tag: 'InstallerService');
+      Log.i('NapCat 与 LinuxQQ 卸载完成', tag: 'InstallerService');
       return true;
     } catch (e) {
       Log.e('准备重新安装 NapCat 异常: $e', tag: 'InstallerService');

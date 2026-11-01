@@ -1,15 +1,15 @@
-/// 安装流水线细分阶段
+/// 安装流水线阶段
 enum InstallStage {
-  extractingRootfs(0.05, '正在解压 Ubuntu 根文件系统...'),
-  configuringNetwork(0.25, '配置网络代理与系统参数...'),
-  checkingSystemDeps(0.40, '正在检查并安装系统运行依赖...'),
-  installingUv(0.52, '正在下载并安装 uv...'),
-  cloningMaibot(0.64, '正在获取 MaiBot 源码...'),
-  cloningAdapter(0.72, '安装默认适配器插件...'),
-  syncingPythonEnv(0.84, '正在同步 Python 依赖库...'),
-  installingNapcat(0.92, '正在安装 NapCatQQ 组件...'),
-  restoringBackup(0.95, '正在恢复配置与历史数据...'),
-  completed(0.96, '初始化完成，正在准备启动...');
+  extractingRootfs(0.05, '解压 Ubuntu 系统...'),
+  configuringNetwork(0.25, '配置系统环境...'),
+  checkingSystemDeps(0.40, '检查系统依赖...'),
+  installingUv(0.52, '安装 uv 工具...'),
+  cloningMaibot(0.64, '下载 MaiBot 源码...'),
+  cloningAdapter(0.72, '安装适配器插件...'),
+  syncingPythonEnv(0.84, '安装 Python 依赖...'),
+  installingNapcat(0.92, '安装 NapCat 组件...'),
+  restoringBackup(0.95, '恢复数据与配置...'),
+  completed(0.96, '准备启动服务...');
 
   const InstallStage(this.progressWeight, this.defaultLabel);
   final double progressWeight;
@@ -27,17 +27,14 @@ enum AppPhase {
   error,
 }
 
-/// 确定性应用启动生命周期状态机
-///
-/// 外界仅上报客观事实（开始解压、配置阶段推进、请求启动后端、Web 端口就绪、登录完成、发生错误），
-/// 内部通过纯逻辑确定性推导当前 [AppPhase] 与归一化进度 [progress]。
+/// 应用启动生命周期状态机
 class AppLifecycleStateMachine {
   AppPhase _phase = AppPhase.uninitialized;
   InstallStage? _installStage;
   bool _backendRequested = false;
   bool _portsReady = false;
   bool _loginReady = false;
-  String _statusMessage = '正在准备环境...';
+  String _statusMessage = '准备环境中...';
   String? _errorMessage;
   double _progress = 0.0;
 
@@ -50,7 +47,7 @@ class AppLifecycleStateMachine {
   String? get errorMessage => _errorMessage;
   double get progress => _progress;
 
-  /// 是否已满足全部进入主控制台的条件（Web 端口已就绪 且 登录已处理）
+  /// 是否已满足进入主界面的条件
   bool get canEnterWebview => _phase == AppPhase.ready && _portsReady && _loginReady;
 
   /// 上报开始解压根文件系统
@@ -69,7 +66,6 @@ class AppLifecycleStateMachine {
     if (message != null && message.isNotEmpty) {
       _statusMessage = message;
     }
-    // 解压阶段进度权重平滑映射于 0.05 ~ 0.22 之间
     final computed = (0.05 + ratio.clamp(0.0, 1.0) * 0.17);
     if (computed > _progress) {
       _progress = computed;
@@ -84,7 +80,7 @@ class AppLifecycleStateMachine {
     }
   }
 
-  /// 上报进入安装与环境配置子阶段
+  /// 上报进入配置阶段
   void beginConfiguration({InstallStage? stage, String? message}) {
     _errorMessage = null;
     final targetStage = stage ?? InstallStage.configuringNetwork;
@@ -96,12 +92,12 @@ class AppLifecycleStateMachine {
     _recomputePhase();
   }
 
-  /// 上报已请求拉起后台守护进程（重置端口就绪事实，保留进程内粘性登录事实）
+  /// 上报请求启动后台服务
   void markBackendRequested({String? message}) {
     _errorMessage = null;
     _backendRequested = true;
     _portsReady = false;
-    _statusMessage = message ?? '正在启动后台运行环境...';
+    _statusMessage = message ?? '启动后台服务...';
     if (_progress < 0.96) {
       _progress = 0.96;
     }
@@ -116,7 +112,7 @@ class AppLifecycleStateMachine {
     if (message != null && message.isNotEmpty) {
       _statusMessage = message;
     } else if (!_loginReady) {
-      _statusMessage = '后台核心已就绪，等待 QQ 登录确认...';
+      _statusMessage = '服务已就绪，等待登录 QQ';
     } else {
       _statusMessage = '全部服务已就绪';
     }
@@ -124,7 +120,7 @@ class AppLifecycleStateMachine {
     _recomputePhase();
   }
 
-  /// 上报 NapCat 登录流程已完成或已具备可用凭证（进程内粘性）
+  /// 上报登录就绪
   void markLoginReady({String? message}) {
     _errorMessage = null;
     _loginReady = true;
@@ -139,7 +135,7 @@ class AppLifecycleStateMachine {
     _recomputePhase();
   }
 
-  /// 上报流程发生致命错误
+  /// 上报发生错误
   void fail(String error) {
     _errorMessage = error;
     _statusMessage = error;

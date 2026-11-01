@@ -78,7 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
         Get.snackbar(
           '已打开',
-          '已在文件管理器中打开 MaiBot Ubuntu 文件系统',
+          '已在文件管理器中打开 Ubuntu 文件系统',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 2),
         );
@@ -91,7 +91,7 @@ class _SettingsPageState extends State<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Ubuntu 文件系统已挂载至系统"文件"应用的侧栏，名称为:',
+                  '系统文件管理器的侧栏名称为:',
                   style: TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 8),
@@ -105,12 +105,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  '你可以手动打开系统"文件"应用，在侧栏中找到"MaiBot Ubuntu"来访问。',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '或使用 MT 文件管理器等应用，添加以下路径至侧栏:',
+                  '可手动打开系统文件应用访问，或在第三方文件管理器中添加路径:',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
@@ -194,7 +189,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.home_rounded,
                     iconColor: Colors.blue,
                     title: '回到 MaiBot 主页',
-                    subtitle: '重置并刷新 MaiBot 页面',
+                    subtitle: '刷新页面',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -207,7 +202,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       widget.onNavigate(0);
                       Get.snackbar(
                         '已跳转',
-                        'MaiBot 页面已重置并刷新',
+                        'MaiBot 页面已刷新',
                         snackPosition: SnackPosition.BOTTOM,
                         duration: const Duration(seconds: 2),
                       );
@@ -218,7 +213,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.account_circle_rounded,
                     iconColor: Colors.indigo,
                     title: '快速登录 QQ',
-                    subtitle: '配置自动免扫码登录的 QQ 账号',
+                    subtitle: '设置免扫码登录',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -231,7 +226,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.folder_open_rounded,
                     iconColor: Colors.amber.shade800,
                     title: '查看数据目录与文件',
-                    subtitle: '通过系统文件管理或 MT 管理器浏览 Ubuntu 环境目录',
+                    subtitle: '浏览 Ubuntu 系统目录',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -250,7 +245,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.shield_outlined,
                     iconColor: Colors.blue,
                     title: '权限与后台保活',
-                    subtitle: '系统运行权限、电池优化及后台常驻策略',
+                    subtitle: '系统权限与前台服务保活',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -265,7 +260,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.cloud_sync_rounded,
                     iconColor: Colors.teal,
                     title: '更新 MaiBot',
-                    subtitle: '执行 git pull 拉取当前分支最新代码并同步依赖',
+                    subtitle: '拉取最新代码并更新依赖',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -278,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.alt_route_rounded,
                     iconColor: Colors.teal.shade700,
                     title: '切换 MaiBot 分支',
-                    subtitle: '获取并切换 MaiBot 代码分支',
+                    subtitle: '切换代码分支',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -291,7 +286,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.sell_rounded,
                     iconColor: Colors.purple,
                     title: '切换 Release 版本',
-                    subtitle: '按 Release Tag 检出指定版本',
+                    subtitle: '检出指定发布版本',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -303,8 +298,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildSettingTile(
                     icon: Icons.code_rounded,
                     iconColor: Colors.cyan.shade700,
-                    title: '自定义 Git Clone 链接',
-                    subtitle: '配置自定义或 Fork 的 MaiBot 仓库地址',
+                    title: '自定义 Git 仓库',
+                    subtitle: '配置自定义仓库地址',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -316,8 +311,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   _buildSettingTile(
                     icon: Icons.cleaning_services_rounded,
                     iconColor: Colors.orange,
-                    title: '清空 WebView 缓存',
-                    subtitle: '清理内置网页与控制台的临时缓存',
+                    title: '清空网页缓存',
+                    subtitle: '清理内置网页缓存',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -331,7 +326,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           if (context.mounted) {
                             Get.snackbar(
                               '成功',
-                              'WebView 缓存已清理',
+                              '网页缓存已清理',
                               snackPosition: SnackPosition.BOTTOM,
                             );
                           }
@@ -362,7 +357,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.backup_rounded,
                       iconColor: Colors.blue.shade700,
                       title: '备份 MaiBot 数据',
-                      subtitle: '打包本地配置、插件及数据至手机下载目录',
+                      subtitle: '导出配置、插件及数据',
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
@@ -377,7 +372,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.settings_backup_restore_rounded,
                       iconColor: Colors.indigo.shade600,
                       title: '从备份恢复数据',
-                      subtitle: '选择本地备份存档，支持按模块细粒度还原',
+                      subtitle: '还原备份存档',
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
@@ -390,7 +385,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.restart_alt_rounded,
                       iconColor: Colors.orange.shade800,
                       title: '重置 Python 环境',
-                      subtitle: '删除虚拟环境并在启动时重新构建依赖',
+                      subtitle: '删除虚拟环境并重新构建',
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
@@ -403,7 +398,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.refresh_rounded,
                       iconColor: Colors.deepOrange,
                       title: '重新安装 NapCat 组件',
-                      subtitle: '清除 NapCat 文件并触发重新安装',
+                      subtitle: '卸载并重新安装 NapCat',
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
@@ -417,7 +412,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.system_update_alt_rounded,
                       iconColor: Colors.deepOrange.shade700,
                       title: '重新安装 MaiBot',
-                      subtitle: '重新拉取并安装 MaiBot 代码',
+                      subtitle: '重新安装 MaiBot 代码',
                       trailing: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
@@ -463,7 +458,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.privacy_tip_rounded,
                     iconColor: Colors.blueGrey,
                     title: '隐私政策',
-                    subtitle: '查看应用隐私保护与开源协议条款',
+                    subtitle: '查看隐私政策',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -532,7 +527,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     icon: Icons.power_settings_new_rounded,
                     iconColor: Colors.redAccent,
                     title: '退出应用',
-                    subtitle: '完全终止前台守护服务与容器进程',
+                    subtitle: '停止前台服务并退出应用',
                     trailing: Icon(
                       Icons.chevron_right_rounded,
                       size: 20,

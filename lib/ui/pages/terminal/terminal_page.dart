@@ -9,7 +9,7 @@ import '../../../core/utils/file_utils.dart';
 import '../../controllers/home_controller.dart';
 import 'terminal_theme.dart';
 
-/// MaiBot 启动加载与初始终端监视页面（正统 Material You / Material 3 沉浸式一体化风格）
+/// MaiBot 启动加载与初始终端监视页面
 class TerminalPage extends StatefulWidget {
   const TerminalPage({super.key});
 
@@ -20,7 +20,7 @@ class TerminalPage extends StatefulWidget {
 class _TerminalPageState extends State<TerminalPage> {
   final HomeController controller = Get.find<HomeController>();
 
-  // 0: Material You 核心看板模式, 1: MaiBot 启动终端, 2: NapCat 终端
+  // 0: 看板模式, 1: MaiBot 终端, 2: NapCat 终端
   int _displayMode = 0;
   DateTime? _lastBackPressTime;
 
@@ -85,7 +85,7 @@ class _TerminalPageState extends State<TerminalPage> {
             behavior: HitTestBehavior.translucent,
             child: Stack(
               children: [
-                // 1. 终端视图层（MaiBot / NapCat 全功能控制台）
+                // 1. 终端视图层
                 if (isTerminalVisible)
                   Positioned.fill(
                     child: Column(
@@ -210,7 +210,7 @@ class _TerminalPageState extends State<TerminalPage> {
                     ),
                   ),
 
-                // 2. 形态 0: Material You 核心一体化看板
+                // 2. 形态 0: 核心看板
                 if (!isTerminalVisible)
                   Center(
                     child: SingleChildScrollView(
@@ -221,7 +221,6 @@ class _TerminalPageState extends State<TerminalPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // 品牌图标（Material 3 容器与平滑阴影）
                             Container(
                               width: 92,
                               height: 92,
@@ -262,7 +261,7 @@ class _TerminalPageState extends State<TerminalPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '正在初始化后台运行环境与核心组件',
+                              '正在启动后台服务',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 letterSpacing: 0.1,
@@ -271,14 +270,14 @@ class _TerminalPageState extends State<TerminalPage> {
                             ),
                             const SizedBox(height: 32),
 
-                            // 一体化进度展示卡片
+                            // 进度展示卡片
                             GetBuilder<HomeController>(
                               builder: (ctrl) {
                                 final progressVal = ctrl.progress.clamp(0.0, 1.0);
                                 final pct = (progressVal * 100).toInt();
                                 final stepText = ctrl.currentProgress.isNotEmpty
                                     ? ctrl.currentProgress.trim()
-                                    : '正在准备环境...';
+                                    : '准备环境中...';
 
                                 return Container(
                                   padding: const EdgeInsets.all(20),
@@ -388,7 +387,7 @@ class _TerminalPageState extends State<TerminalPage> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              '点击任意空白处切换控制台视图',
+                              '点击空白处切换终端',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
@@ -406,5 +405,4 @@ class _TerminalPageState extends State<TerminalPage> {
       ),
     );
   }
-
 }
