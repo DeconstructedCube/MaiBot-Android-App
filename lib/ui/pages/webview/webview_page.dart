@@ -13,6 +13,7 @@ import '../settings/settings_page.dart';
 import '../terminal/terminal_tab_view.dart';
 import '../../navbar/bottom_nav_bar.dart';
 import '../../../core/config/app_config.dart';
+import '../settings/maintenance_actions.dart';
 
 class WebViewPage extends StatefulWidget {
   const WebViewPage({super.key});
@@ -460,8 +461,8 @@ class _WebViewPageState extends State<WebViewPage> {
                 return;
               }
 
-              // 执行安全退出
-              SystemNavigator.pop();
+              // 执行彻底安全退出（停机并清理后台）
+              await MaintenanceActions.performExit(showConfirmation: false);
             }());
           },
           child: Scaffold(

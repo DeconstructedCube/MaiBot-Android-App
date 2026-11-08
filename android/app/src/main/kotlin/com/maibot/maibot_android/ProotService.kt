@@ -233,15 +233,22 @@ class ProotService : Service() {
             return START_NOT_STICKY
         }
 
-        // 处理 STOP 指令
-        if ("STOP" == action || ("CONTROL" == action && intent.getStringExtra("action")?.equals("STOP", ignoreCase = true) == true && intent.getStringExtra("target")?.equals("ALL", ignoreCase = true) == true)) {
+        // 处理 STOP 指令：立即安全停机，绝不二次启动服务或重新挂载前台通知
+        val isStopAction = "STOP".equals(action, ignoreCase = true) ||
+                ("CONTROL".equals(action, ignoreCase = true) && "STOP".equals(intent?.getStringExtra("action"), ignoreCase = true))
+        if (isStopAction) {
+            Log.i(TAG, "收到明确停机指令 (action=$action)，立即终止后台所有进程并撤回前台通知")
+            sp.edit().putBoolean("user_stopped", true).apply()
             val binPath = intent?.getStringExtra("binPath") ?: sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
             val tmpPath = intent?.getStringExtra("tmpPath") ?: sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
             val ubuntuPath = intent?.getStringExtra("ubuntuPath") ?: sp.getString("ubuntuPath", null)
                 ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
 
-            commandChannel.trySend {
-                handleCommandAsync("STOP", "STOP", "ALL", binPath, "${filesDir.absolutePath}/home", tmpPath, ubuntuPath)
+            serviceScope.launch {
+                safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
+                withContext(Dispatchers.Main) {
+                    stopForegroundAndSelf()
+                }
             }
             return START_NOT_STICKY
         }

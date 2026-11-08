@@ -358,9 +358,12 @@ class MaintenanceActions {
     } catch (e) {
       Log.e('退出应用停止服务异常: $e', tag: 'MaiBot');
     }
-    // 等待停止指令送达并处理
-    await Future.delayed(const Duration(milliseconds: 300));
-    await SystemNavigator.pop();
+    await Future.delayed(const Duration(milliseconds: 200));
+    try {
+      const MethodChannel('maibot_channel').invokeMethod('exit_app');
+    } catch (_) {
+      await SystemNavigator.pop();
+    }
   }
 
   /// 退出应用（设置页入口）

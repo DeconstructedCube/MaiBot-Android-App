@@ -80,6 +80,20 @@ class InstallerService {
     lastInstallWasFresh = !isExtracted;
     // 核心优化：若系统已经全量就绪（非初次安装且所有核心组件完好），直接跳过冗余的网络测速与依赖检查
     if (isExtracted && isEnvironmentFullyInstalled()) {
+      // 启动前确保 uv 和 pip 软链接自愈就绪
+      try {
+        final uvGlobal = File('${scripts.ubuntuPath}/usr/local/bin/uv');
+        final uvLocal = File('${scripts.ubuntuPath}/root/.local/bin/uv');
+        if (uvLocal.existsSync() && !uvGlobal.existsSync()) {
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uv', '${scripts.ubuntuPath}/usr/local/bin/uv']);
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uvx', '${scripts.ubuntuPath}/usr/local/bin/uvx']);
+        }
+        final pipGlobal = File('${scripts.ubuntuPath}/usr/local/bin/pip');
+        final pipVenv = File('${scripts.ubuntuPath}/root/MaiBot/.venv/bin/pip');
+        if (pipVenv.existsSync() && !pipGlobal.existsSync()) {
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/MaiBot/.venv/bin/pip', '${scripts.ubuntuPath}/usr/local/bin/pip']);
+        }
+      } catch (_) {}
       reportStage(InstallStage.completed, '准备启动服务...');
       return true;
     }
@@ -327,6 +341,15 @@ class InstallerService {
         }
         if (!success) return false;
         await venvMarker.writeAsString('ready');
+        // 为虚拟环境安装标准的 pip / setuptools / wheel 工具，支持终端中直接 pip install
+        onLog?.call('\x1b[36m[Python]\x1b[0m 为虚拟环境配置 pip 工具...\r\n');
+        await _runInProot(
+          'cd /root/MaiBot && /root/.local/bin/uv pip install pip setuptools wheel --python /root/MaiBot/.venv/bin/python --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple',
+          onLog: onLog,
+        );
+        await _runInProot(
+          'ln -sf /root/MaiBot/.venv/bin/pip /usr/local/bin/pip; ln -sf /root/MaiBot/.venv/bin/python /usr/local/bin/python',
+        );
       }
 
       // 6. 安装 NapCat（直接使用 Fork 维护仓库安装脚本）
@@ -706,6 +729,13 @@ class InstallerService {
           .copy('${localBin.path}/uvx');
       await Process.run('${RuntimeEnvir.binPath}/busybox',
           ['chmod', '+x', '${localBin.path}/uv', '${localBin.path}/uvx']);
+      // 同时软链至 /usr/local/bin，确保系统任意路径与子进程输入 uv 均立即可用
+      try {
+        final usrLocalBin = Directory('${scripts.ubuntuPath}/usr/local/bin');
+        await usrLocalBin.create(recursive: true);
+        await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uv', '${scripts.ubuntuPath}/usr/local/bin/uv']);
+        await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uvx', '${scripts.ubuntuPath}/usr/local/bin/uvx']);
+      } catch (_) {}
       return true;
     }
     return false;

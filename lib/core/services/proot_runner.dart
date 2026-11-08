@@ -118,7 +118,7 @@ class ProotRunner {
     final proxyScript = getProxyExportScript();
 
     final innerShellCommand = StringBuffer();
-    innerShellCommand.write('export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; ');
+    innerShellCommand.write('export PATH=/root/.local/bin:/root/MaiBot/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; ');
     innerShellCommand.write(proxyScript);
     innerShellCommand.write('mkdir -p /tmp /var/tmp; ');
     innerShellCommand.write('cd $workingDir; ');
@@ -126,7 +126,9 @@ class ProotRunner {
     if (isInteractive) {
       innerShellCommand.write(
         'export HOME=/root; '
-        'export PS1="\\u@maibot:\\w# "; '
+        'export PATH="/root/.local/bin:/root/MaiBot/.venv/bin:$PATH"; '
+        'export PS1="\\[\\e[32m\\]\\u@maibot\\[\\e[0m\\]:\\[\\e[34m\\]\\w\\[\\e[0m\\]# "; '
+        'if [ -f /root/MaiBot/.venv/bin/activate ]; then . /root/MaiBot/.venv/bin/activate; fi; '
         'if command -v script >/dev/null 2>&1; then '
         '    exec script -q -e -c "/bin/bash -i" /dev/null; '
         'elif [ -x /bin/bash ]; then '

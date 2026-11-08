@@ -172,6 +172,21 @@ class MainActivity : FragmentActivity() {
                     } catch (_: Exception) {}
                     result.success(true)
                 }
+                "exit_app" -> {
+                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+                    sp.edit().putBoolean("user_stopped", true).apply()
+                    val stopIntent = Intent(mContext, ProotService::class.java).apply {
+                        action = "STOP"
+                    }
+                    try {
+                        mContext.startService(stopIntent)
+                    } catch (_: Exception) {}
+                    result.success(true)
+                    finishAffinity()
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        android.os.Process.killProcess(android.os.Process.myPid())
+                    }, 250)
+                }
                 else -> {
                     result.notImplemented()
                 }
