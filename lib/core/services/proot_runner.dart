@@ -88,8 +88,6 @@ class ProotRunner {
       'UV_NO_PROGRESS': '0',
       'UV_INDEX_URL': MirrorRegistry.activePypiMirror,
       'PIP_NO_COLOR': '0',
-      'COLUMNS': '45',
-      'LINES': '24',
       'LANG': 'C.UTF-8',
       'LC_ALL': 'C.UTF-8',
       'DEBIAN_FRONTEND': 'noninteractive',
@@ -126,8 +124,9 @@ class ProotRunner {
     if (isInteractive) {
       innerShellCommand.write(
         'export HOME=/root; '
-        'export PATH="/root/.local/bin:/root/MaiBot/.venv/bin:$PATH"; '
-        'export PS1="\\[\\e[32m\\]\\u@maibot\\[\\e[0m\\]:\\[\\e[34m\\]\\w\\[\\e[0m\\]# "; '
+        'export PATH="/root/.local/bin:/root/MaiBot/.venv/bin:\$PATH"; '
+        'export PS1="\\[\\033[01;32m\\]\\u@maibot\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]# "; '
+        'shopt -s checkwinsize 2>/dev/null; '
         'if [ -f /root/MaiBot/.venv/bin/activate ]; then . /root/MaiBot/.venv/bin/activate; fi; '
         'if command -v script >/dev/null 2>&1; then '
         '    exec script -q -e -c "/bin/bash -i" /dev/null; '

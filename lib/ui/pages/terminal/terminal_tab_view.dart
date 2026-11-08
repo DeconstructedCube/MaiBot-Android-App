@@ -9,6 +9,7 @@ import '../../../core/utils/file_utils.dart';
 import '../../controllers/home_controller.dart';
 import '../../controllers/terminal_tab_manager.dart';
 import 'terminal_theme.dart';
+import 'widgets/terminal_extra_keys_bar.dart';
 class TerminalTabView extends StatefulWidget {
   const TerminalTabView({super.key});
 
@@ -70,6 +71,9 @@ class _TerminalTabViewState extends State<TerminalTabView> {
               }).toList(),
             ),
           ),
+
+          // Termux 同款快捷按键底边栏（ESC, TAB, CTRL, ALT, 方向键等）
+          TerminalExtraKeysBar(manager: manager),
         ],
       );
     });

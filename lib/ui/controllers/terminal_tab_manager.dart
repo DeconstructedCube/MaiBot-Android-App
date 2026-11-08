@@ -56,6 +56,46 @@ class TerminalTabManager extends GetxController {
   // 当前激活的标签页索引
   final RxInt activeTabIndex = 0.obs;
 
+  // Termux 同款修饰键状态（有状态键）
+  final RxBool isCtrlActive = false.obs;
+  final RxBool isAltActive = false.obs;
+  final RxBool isShiftActive = false.obs;
+
+  /// 向当前活跃终端发送输入字符串（自动结合当前 CTRL / ALT / SHIFT 状态并自动复位）
+  void dispatchKeyInput(String raw) {
+    if (raw.isEmpty) return;
+    String processed = raw;
+
+    if (isShiftActive.value) {
+      processed = processed.toUpperCase();
+      isShiftActive.value = false;
+    }
+
+    if (isCtrlActive.value) {
+      if (processed.length == 1) {
+        final code = processed.toUpperCase().codeUnitAt(0);
+        if (code >= 64 && code <= 95) {
+          processed = String.fromCharCode(code - 64);
+        } else if (code == 32) {
+          processed = '\x00';
+        }
+      }
+      isCtrlActive.value = false;
+    }
+
+    if (isAltActive.value) {
+      processed = '\x1b$processed';
+      isAltActive.value = false;
+    }
+
+    final tab = activeTab;
+    if (tab != null && tab.process != null) {
+      try {
+        tab.process!.stdin.add(utf8.encode(processed));
+      } catch (_) {}
+    }
+  }
+
 
   /// 初始化固定的终端标签页
   void initializeFixedTabs(Terminal maibotTerminal, Terminal napcatTerminal) {
@@ -148,8 +188,27 @@ class TerminalTabManager extends GetxController {
       final process = await Process.start(prootPath, args, environment: env);
 
       newTerminal.onOutput = (data) {
-        process.stdin.add(utf8.encode(data));
+        if (isCtrlActive.value || isAltActive.value || isShiftActive.value) {
+          dispatchKeyInput(data);
+        } else {
+          process.stdin.add(utf8.encode(data));
+        }
       };
+
+      // 动态同步终端窗口大小，彻底杜绝换行覆盖当前行
+      newTerminal.onResize = (width, height, pixelWidth, pixelHeight) {
+        try {
+          process.stdin.add(utf8.encode('stty cols $width rows $height 2>/dev/null\n'));
+        } catch (_) {}
+      };
+
+      Future.delayed(const Duration(milliseconds: 200), () {
+        try {
+          final cols = newTerminal.viewWidth > 0 ? newTerminal.viewWidth : 80;
+          final rows = newTerminal.viewHeight > 0 ? newTerminal.viewHeight : 24;
+          process.stdin.add(utf8.encode('stty cols $cols rows $rows 2>/dev/null; clear\n'));
+        } catch (_) {}
+      });
 
       final subStdout = process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
