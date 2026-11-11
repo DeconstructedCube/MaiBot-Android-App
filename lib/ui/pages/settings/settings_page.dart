@@ -14,7 +14,6 @@ import '../../../core/config/app_config.dart';
 import '../../../core/services/backup_service.dart';
 import '../../../core/utils/version_utils.dart';
 import 'dialogs/update_dialogs.dart';
-import 'dialogs/quick_login_dialog.dart';
 import 'dialogs/git_clone_dialog.dart';
 import 'dialogs/git_dialogs.dart';
 import 'keep_alive_settings_page.dart';
@@ -25,13 +24,11 @@ import 'widgets/token_and_webview_card.dart';
 
 class SettingsPage extends StatefulWidget {
   final WebViewController maiBotController;
-  final WebViewController napCatController;
   final Function(int) onNavigate;
 
   const SettingsPage({
     super.key,
     required this.maiBotController,
-    required this.napCatController,
     required this.onNavigate,
   });
 
@@ -210,19 +207,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 56),
                   _buildSettingTile(
-                    icon: Icons.account_circle_rounded,
-                    iconColor: Colors.indigo,
-                    title: '快速登录 QQ',
-                    subtitle: '设置免扫码登录',
-                    trailing: Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    onTap: () => showQuickLoginDialog(),
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  _buildSettingTile(
                     icon: Icons.folder_open_rounded,
                     iconColor: Colors.amber.shade800,
                     title: '查看数据目录与文件',
@@ -322,7 +306,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       unawaited(() async {
                         try {
                           await widget.maiBotController.clearCache();
-                          await widget.napCatController.clearCache();
                           if (context.mounted) {
                             Get.snackbar(
                               '成功',
@@ -392,20 +375,6 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                       onTap: () => unawaited(MaintenanceActions.resetPythonEnv()),
-                    ),
-                    const Divider(height: 1, indent: 56),
-                    _buildSettingTile(
-                      icon: Icons.refresh_rounded,
-                      iconColor: Colors.deepOrange,
-                      title: '重新安装 NapCat 组件',
-                      subtitle: '卸载并重新安装 NapCat',
-                      trailing: Icon(
-                        Icons.chevron_right_rounded,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      onTap: () =>
-                          unawaited(MaintenanceActions.reinstallNapcat()),
                     ),
                     const Divider(height: 1, indent: 56),
                     _buildSettingTile(

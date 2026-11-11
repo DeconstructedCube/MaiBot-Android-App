@@ -48,7 +48,7 @@ void main() {
     });
 
 
-    test('reaches ready only when both portsReady and loginReady are true', () {
+    test('reaches ready immediately when portsReady is marked', () {
       final sm = AppLifecycleStateMachine();
 
       sm.markBackendRequested();
@@ -56,27 +56,20 @@ void main() {
       expect(sm.canEnterWebview, isFalse);
 
       sm.markPortsReady();
-      expect(sm.phase, AppPhase.waitingLogin);
-      expect(sm.portsReady, isTrue);
-      expect(sm.canEnterWebview, isFalse);
-
-      sm.markLoginReady();
       expect(sm.phase, AppPhase.ready);
       expect(sm.progress, 1.0);
       expect(sm.canEnterWebview, isTrue);
     });
 
-    test('login fact is sticky across backend restarts while port fact resets', () {
+    test('re-requesting backend resets portsReady and transitions back to ready on port recovery', () {
       final sm = AppLifecycleStateMachine();
 
-      sm.markLoginReady();
       sm.markPortsReady();
       expect(sm.phase, AppPhase.ready);
 
-      // Re-requesting backend resets portsReady but preserves loginReady
+      // Re-requesting backend resets portsReady
       sm.markBackendRequested();
       expect(sm.portsReady, isFalse);
-      expect(sm.loginReady, isTrue);
       expect(sm.phase, AppPhase.backendStarting);
 
       // Once ports come back up, immediately transitions to ready

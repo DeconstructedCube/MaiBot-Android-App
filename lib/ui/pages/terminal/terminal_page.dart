@@ -20,7 +20,7 @@ class TerminalPage extends StatefulWidget {
 class _TerminalPageState extends State<TerminalPage> {
   final HomeController controller = Get.find<HomeController>();
 
-  // 0: 看板模式, 1: MaiBot 终端, 2: NapCat 终端
+  // 0: 看板模式, 1: MaiBot 终端
   int _displayMode = 0;
   DateTime? _lastBackPressTime;
 
@@ -34,13 +34,7 @@ class _TerminalPageState extends State<TerminalPage> {
 
   void _cycleNextMode() {
     setState(() {
-      if (_displayMode == 0) {
-        _displayMode = 1;
-      } else if (_displayMode == 1) {
-        _displayMode = controller.napcatClient.isConnected ? 2 : 0;
-      } else {
-        _displayMode = 0;
-      }
+      _displayMode = _displayMode == 0 ? 1 : 0;
     });
   }
 
@@ -120,12 +114,6 @@ class _TerminalPageState extends State<TerminalPage> {
                                         icon: Icon(Icons.smart_toy_rounded, size: 15),
                                         label: Text('MaiBot', style: TextStyle(fontSize: 12)),
                                       ),
-                                      if (controller.napcatClient.isConnected)
-                                        const ButtonSegment<int>(
-                                          value: 2,
-                                          icon: Icon(Icons.pets_rounded, size: 15),
-                                          label: Text('NapCat', style: TextStyle(fontSize: 12)),
-                                        ),
                                     ],
                                     selected: {_displayMode},
                                     onSelectionChanged: (Set<int> newSelection) {
@@ -148,15 +136,12 @@ class _TerminalPageState extends State<TerminalPage> {
                                 tooltip: '复制日志',
                                 onPressed: () {
                                   unawaited(() async {
-                                    final activeTerminal = _displayMode == 2
-                                        ? controller.napcatShowTerminal
-                                        : controller.terminal;
-                                    final text = activeTerminal.getPlainText();
+                                    final text = controller.terminal.getPlainText();
                                     if (text.isNotEmpty) {
                                       await Clipboard.setData(ClipboardData(text: text));
                                       Get.snackbar(
                                         '已复制',
-                                        '${_displayMode == 2 ? 'NapCat' : 'MaiBot'} 终端内容已复制到剪贴板',
+                                        'MaiBot 终端内容已复制到剪贴板',
                                         snackPosition: SnackPosition.BOTTOM,
                                         duration: const Duration(seconds: 2),
                                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -171,11 +156,8 @@ class _TerminalPageState extends State<TerminalPage> {
                                 icon: Icon(Icons.cleaning_services_rounded, size: 18, color: colorScheme.onSurfaceVariant),
                                 tooltip: '清屏',
                                 onPressed: () {
-                                  final activeTerminal = _displayMode == 2
-                                      ? controller.napcatShowTerminal
-                                      : controller.terminal;
-                                  activeTerminal.buffer.clear();
-                                  activeTerminal.buffer.setCursor(0, 0);
+                                  controller.terminal.buffer.clear();
+                                  controller.terminal.buffer.setCursor(0, 0);
                                 },
                               ),
                               IconButton(
@@ -197,9 +179,7 @@ class _TerminalPageState extends State<TerminalPage> {
                             color: getAppTerminalTheme(context).background,
                             padding: const EdgeInsets.all(8.0),
                             child: TerminalView(
-                              _displayMode == 2
-                                  ? controller.napcatShowTerminal
-                                  : controller.terminal,
+                              controller.terminal,
                               readOnly: true,
                               backgroundOpacity: 1,
                               theme: getAppTerminalTheme(context),
@@ -365,24 +345,6 @@ class _TerminalPageState extends State<TerminalPage> {
                                     ),
                                   ),
                                 ),
-                                if (controller.napcatClient.isConnected) ...[
-                                  const SizedBox(width: 12),
-                                  FilledButton.tonalIcon(
-                                    onPressed: () {
-                                      setState(() {
-                                        _displayMode = 2;
-                                      });
-                                    },
-                                    icon: const Icon(Icons.pets_rounded, size: 18),
-                                    label: const Text('NapCat 日志'),
-                                    style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                  ),
-                                ],
                               ],
                             ),
                             const SizedBox(height: 16),

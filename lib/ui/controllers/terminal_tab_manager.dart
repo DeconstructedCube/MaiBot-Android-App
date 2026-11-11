@@ -10,7 +10,7 @@ import '../../../core/utils/file_utils.dart';
 
 /// 终端标签页类型
 enum TerminalTabType {
-  fixed, // 固定的MaiBot/NapCat终端（只读）
+  fixed, // 固定的MaiBot终端（只读）
   system, // 自定义交互终端（可写、可交互、可关闭）
 }
 
@@ -98,7 +98,7 @@ class TerminalTabManager extends GetxController {
 
 
   /// 初始化固定的终端标签页
-  void initializeFixedTabs(Terminal maibotTerminal, Terminal napcatTerminal) {
+  void initializeFixedTabs(Terminal maibotTerminal) {
     // 清空现有标签页
     tabs.clear();
 
@@ -111,17 +111,7 @@ class TerminalTabManager extends GetxController {
       isActive: true,
     );
 
-    // 添加固定的NapCat终端标签页
-    final napcatTab = TerminalTab(
-      id: 'fixed_napcat',
-      title: 'NapCat',
-      type: TerminalTabType.fixed,
-      terminal: napcatTerminal,
-      isActive: false,
-    );
-
     tabs.add(maibotTab);
-    tabs.add(napcatTab);
     activeTabIndex.value = 0;
   }
 

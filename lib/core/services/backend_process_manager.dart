@@ -4,7 +4,6 @@ import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
-import 'config_service.dart';
 import 'port_probe_service.dart';
 import '../../ui/pages/settings/maintenance_actions.dart';
 
@@ -38,7 +37,6 @@ enum ProcessState {
 enum ServiceTarget {
   all,
   maibot,
-  napcat,
 }
 
 /// 统一后端进程与容器生命周期管理器
@@ -47,11 +45,8 @@ class BackendProcessManager {
 
   // 响应式状态
   static final Rx<ProcessState> maibotState = ProcessState.stopped.obs;
-  static final Rx<ProcessState> napcatState = ProcessState.stopped.obs;
   static final RxInt maibotRetryCount = 0.obs;
-  static final RxInt napcatRetryCount = 0.obs;
   static final RxInt maibotPid = (-1).obs;
-  static final RxInt napcatPid = (-1).obs;
 
   static bool _userClickedStop = false;
   static bool get userClickedStop => _userClickedStop;
@@ -91,9 +86,7 @@ class BackendProcessManager {
   static Future<bool> isBackendRunning({
     List<int> probePorts = const [
       Ports.maibotPtySocket,
-      Ports.napcatPtySocket,
       Ports.maibotWeb,
-      Ports.napcatWebUi,
     ],
     Duration timeout = const Duration(milliseconds: 500),
   }) async {
@@ -108,8 +101,6 @@ class BackendProcessManager {
     switch (target) {
       case ServiceTarget.maibot:
         return await isBackendRunning(probePorts: [Ports.maibotPtySocket, Ports.maibotWeb]);
-      case ServiceTarget.napcat:
-        return await isBackendRunning(probePorts: [Ports.napcatPtySocket, Ports.napcatWebUi]);
       case ServiceTarget.all:
         return await isBackendRunning();
     }
@@ -124,11 +115,6 @@ class BackendProcessManager {
       maibotRetryCount.value = retry;
       maibotPid.value = pid;
       Log.d('MaiBot 状态更新: $state$pidInfo (重试次数: $retry)', tag: 'BackendProcessManager');
-    } else if (service.toLowerCase() == 'napcat') {
-      napcatState.value = state;
-      napcatRetryCount.value = retry;
-      napcatPid.value = pid;
-      Log.d('NapCat 状态更新: $state$pidInfo (重试次数: $retry)', tag: 'BackendProcessManager');
     }
   }
 
@@ -138,7 +124,6 @@ class BackendProcessManager {
     Log.i('启动后端服务: target=$target', tag: 'BackendProcessManager');
 
     try {
-      await ConfigService.ensureConfigsSynced();
       await _channel.invokeMethod('control_backend_service', {
         'action': 'start',
         'target': target.name,
@@ -179,7 +164,6 @@ class BackendProcessManager {
     Log.i('重启服务: target=$target', tag: 'BackendProcessManager');
 
     try {
-      await ConfigService.ensureConfigsSynced();
       await _channel.invokeMethod('control_backend_service', {
         'action': 'restart',
         'target': target.name,

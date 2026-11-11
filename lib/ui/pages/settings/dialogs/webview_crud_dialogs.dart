@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../../core/config/app_config.dart';
 import '../../../controllers/webview_controller.dart';
 
 // 显示添加自定义 WebView 对话框
@@ -27,9 +26,9 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
           const SizedBox(height: 16),
           TextField(
             controller: urlController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'URL 地址',
-              hintText: '例如：${Ports.napcatWebUi}/webui?token=***',
+              hintText: '例如：8080/webui',
               helperText: '默认自动补全 http://127.0.0.1:',
               prefixIcon: const Icon(Icons.link_rounded),
             ),

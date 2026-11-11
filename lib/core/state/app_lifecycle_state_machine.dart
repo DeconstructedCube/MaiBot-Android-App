@@ -3,11 +3,9 @@ enum InstallStage {
   extractingRootfs(0.05, '解压 Ubuntu 系统...'),
   configuringNetwork(0.25, '配置系统环境...'),
   checkingSystemDeps(0.40, '检查系统依赖...'),
-  installingUv(0.52, '安装 uv 工具...'),
-  cloningMaibot(0.64, '下载 MaiBot 源码...'),
-  cloningAdapter(0.72, '安装适配器插件...'),
-  syncingPythonEnv(0.84, '安装 Python 依赖...'),
-  installingNapcat(0.92, '安装 NapCat 组件...'),
+  installingUv(0.55, '安装 uv 工具...'),
+  cloningMaibot(0.70, '下载 MaiBot 源码...'),
+  syncingPythonEnv(0.85, '安装 Python 依赖...'),
   restoringBackup(0.95, '恢复数据与配置...'),
   completed(0.96, '准备启动服务...');
 
@@ -22,7 +20,6 @@ enum AppPhase {
   extracting,
   configuring,
   backendStarting,
-  waitingLogin,
   ready,
   error,
 }
@@ -33,7 +30,6 @@ class AppLifecycleStateMachine {
   InstallStage? _installStage;
   bool _backendRequested = false;
   bool _portsReady = false;
-  bool _loginReady = false;
   String _statusMessage = '准备环境中...';
   String? _errorMessage;
   double _progress = 0.0;
@@ -42,13 +38,12 @@ class AppLifecycleStateMachine {
   InstallStage? get installStage => _installStage;
   bool get backendRequested => _backendRequested;
   bool get portsReady => _portsReady;
-  bool get loginReady => _loginReady;
   String get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   double get progress => _progress;
 
   /// 是否已满足进入主界面的条件
-  bool get canEnterWebview => _phase == AppPhase.ready && _portsReady && _loginReady;
+  bool get canEnterWebview => _phase == AppPhase.ready && _portsReady;
 
   /// 上报开始解压根文件系统
   void beginExtraction({String? message}) {
@@ -111,29 +106,13 @@ class AppLifecycleStateMachine {
     _portsReady = true;
     if (message != null && message.isNotEmpty) {
       _statusMessage = message;
-    } else if (!_loginReady) {
-      _statusMessage = '服务已就绪，等待登录 QQ';
     } else {
       _statusMessage = '全部服务已就绪';
     }
-    _progress = _loginReady ? 1.0 : 0.98;
+    _progress = 1.0;
     _recomputePhase();
   }
 
-  /// 上报登录就绪
-  void markLoginReady({String? message}) {
-    _errorMessage = null;
-    _loginReady = true;
-    if (message != null && message.isNotEmpty) {
-      _statusMessage = message;
-    } else if (_portsReady) {
-      _statusMessage = '全部服务已就绪';
-    }
-    if (_portsReady) {
-      _progress = 1.0;
-    }
-    _recomputePhase();
-  }
 
   /// 上报发生错误
   void fail(String error) {
@@ -147,13 +126,9 @@ class AppLifecycleStateMachine {
       _phase = AppPhase.error;
       return;
     }
-    if (_portsReady && _loginReady) {
+    if (_portsReady) {
       _phase = AppPhase.ready;
       _progress = 1.0;
-      return;
-    }
-    if (_portsReady && !_loginReady) {
-      _phase = AppPhase.waitingLogin;
       return;
     }
     if (_backendRequested) {

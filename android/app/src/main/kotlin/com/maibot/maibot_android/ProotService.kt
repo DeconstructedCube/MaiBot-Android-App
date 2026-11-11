@@ -129,7 +129,6 @@ class ProotService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var maibotProcess: ProotProcess? = null
-    private var napcatProcess: ProotProcess? = null
     private var isForegroundActive = false
 
     override fun onCreate() {
@@ -241,12 +240,9 @@ class ProotService : Service() {
             Log.i(TAG, "收到明确停机指令 (action=$action)，立即终止后台所有进程并撤回前台通知")
             sp.edit().putBoolean("user_stopped", true).apply()
             val binPath = intent?.getStringExtra("binPath") ?: sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
-            val tmpPath = intent?.getStringExtra("tmpPath") ?: sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
-            val ubuntuPath = intent?.getStringExtra("ubuntuPath") ?: sp.getString("ubuntuPath", null)
-                ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
 
             serviceScope.launch {
-                safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
+                safelyTerminateAllProcesses(binPath)
                 withContext(Dispatchers.Main) {
                     stopForegroundAndSelf()
                 }
@@ -315,7 +311,7 @@ class ProotService : Service() {
 
         if ("STOP" == action) {
             sp.edit().putBoolean("user_stopped", true).apply()
-            safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+            safelyTerminateAllProcesses(curBin)
             stopForegroundAndSelf()
             return
         }
@@ -328,36 +324,25 @@ class ProotService : Service() {
                     if (ctrlTarget == "ALL" || ctrlTarget == "MAIBOT") {
                         startMaiBot(curBin, curHome, curTmp, curUbuntu)
                     }
-                    if (ctrlTarget == "ALL" || ctrlTarget == "NAPCAT") {
-                        startNapCat(curBin, curHome, curTmp, curUbuntu)
-                    }
                 }
                 "STOP" -> {
                     if (ctrlTarget == "MAIBOT") {
                         maibotProcess?.stop()
                         killTargetProcesses(curBin, arrayOf("python", "python3"))
-                    } else if (ctrlTarget == "NAPCAT") {
-                        napcatProcess?.stop()
-                        killTargetProcesses(curBin, arrayOf("qq", "Xvfb", "xvfb-run", "crashpad_handler"))
                     } else if (ctrlTarget == "ALL") {
                         sp.edit().putBoolean("user_stopped", true).apply()
-                        safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+                        safelyTerminateAllProcesses(curBin)
                         stopForegroundAndSelf()
                     }
                 }
                 "RESTART" -> {
                     sp.edit().putBoolean("user_stopped", false).apply()
-                    if (ctrlTarget == "MAIBOT") {
+                    if (ctrlTarget == "MAIBOT" || ctrlTarget == "ALL") {
                         startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                    } else if (ctrlTarget == "NAPCAT") {
-                        startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                    } else if (ctrlTarget == "ALL") {
-                        startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
-                        startNapCat(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
                     }
                 }
                 "SAFE_TERMINATE" -> {
-                    safelyTerminateAllProcesses(curBin, curTmp, curUbuntu)
+                    safelyTerminateAllProcesses(curBin)
                 }
             }
             return
@@ -370,7 +355,6 @@ class ProotService : Service() {
         }
 
         startMaiBot(curBin, curHome, curTmp, curUbuntu)
-        startNapCat(curBin, curHome, curTmp, curUbuntu)
     }
 
     private fun stopForegroundAndSelf() {
@@ -439,49 +423,6 @@ class ProotService : Service() {
         }
     }
 
-    private suspend fun startNapCat(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
-        if (!forceRestart && napcatProcess?.isAlive() == true) {
-            Log.d(TAG, "NapCat 进程已在运行，跳过启动")
-            return
-        }
-        if (napcatProcess != null) {
-            napcatProcess?.stop()
-            napcatProcess = null
-            killTargetProcesses(binPath, arrayOf("qq", "Xvfb", "xvfb-run", "crashpad_handler"))
-            delay(350)
-        }
-
-        Log.i(TAG, "启动 NapCat 服务进程...")
-        cleanNapcatLocks(tmpPath, ubuntuPath)
-        val napcatCmd = """
-            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            export TERM=xterm-256color
-            export COLORTERM=truecolor
-            export FORCE_COLOR=1
-            export CLICOLOR_FORCE=1
-            export CLICOLOR=1
-            export COLUMNS=45
-            export LINES=24
-            export LANG=C.UTF-8
-            export LC_ALL=C.UTF-8
-            export TMPDIR=/tmp
-            export TEMP=/tmp
-            export TMP=/tmp
-            mkdir -p /tmp /var/tmp /root/.config/QQ
-            chmod 777 /tmp /var/tmp 2>/dev/null || true
-            rm -rf /tmp/Singleton* /tmp/.org.chromium.* /tmp/QQ* /root/.config/QQ/Singleton* /root/.config/QQ/Crashpad* /root/.config/QQ/QQ* /root/.config/QQ/*lock* 2>/dev/null || true
-            cd /root
-            if [ -f /root/launcher.sh ]; then
-                exec bash /root/launcher.sh
-            elif [ -d /root/napcat ]; then
-                cd /root/napcat && exec env LD_PRELOAD=./libnapcat_launcher.so qq --no-sandbox
-            fi
-        """.trimIndent() + "\n"
-
-        napcatProcess = ProotProcess("NapCat", 20002, binPath, homePath, tmpPath, ubuntuPath, napcatCmd).apply {
-            start()
-        }
-    }
 
     private fun killTargetProcesses(binPath: String, targets: Array<String>) {
         try {
@@ -489,13 +430,12 @@ class ProotService : Service() {
         } catch (_: Exception) {}
     }
 
-    private suspend fun safelyTerminateAllProcesses(binPath: String?, tmpPath: String, ubuntuPath: String) {
+    private suspend fun safelyTerminateAllProcesses(binPath: String?) {
         maibotProcess?.stop()
-        napcatProcess?.stop()
         if (binPath != null) {
             try {
                 Runtime.getRuntime().exec(
-                    arrayOf("$binPath/busybox", "killall", "-2", "python", "python3", "node", "qq", "bash", "sh")
+                    arrayOf("$binPath/busybox", "killall", "-2", "python", "python3", "bash", "sh")
                 ).waitFor()
             } catch (_: Exception) {}
             delay(500)
@@ -503,26 +443,21 @@ class ProotService : Service() {
                 Runtime.getRuntime().exec(
                     arrayOf(
                         "$binPath/busybox", "killall", "-9",
-                        "proot", "qq", "python", "python3", "node", "bash", "sh",
-                        "crashpad_handler", "Xvfb", "xvfb-run", "uv", "uvx"
+                        "proot", "python", "python3", "bash", "sh", "uv", "uvx"
                     )
                 ).waitFor()
             } catch (_: Exception) {}
         }
-        cleanNapcatLocks(tmpPath, ubuntuPath)
     }
 
     override fun onDestroy() {
         val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
         val binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
-        val tmpPath = sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
-        val ubuntuPath = sp.getString("ubuntuPath", null)
-            ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
 
         commandChannel.close()
         runBlocking(Dispatchers.IO) {
             withTimeoutOrNull(1500L) {
-                safelyTerminateAllProcesses(binPath, tmpPath, ubuntuPath)
+                safelyTerminateAllProcesses(binPath)
             }
         }
         serviceScope.cancel()
@@ -553,39 +488,6 @@ class ProotService : Service() {
         }
     }
 
-    private fun cleanNapcatLocks(tmpPath: String, ubuntuPath: String) {
-        try {
-            val dirsToClean = arrayOf(tmpPath, "$ubuntuPath/tmp")
-            for (dirStr in dirsToClean) {
-                val d = File(dirStr)
-                if (d.exists() && d.isDirectory) {
-                    d.listFiles()?.forEach { file ->
-                        val name = file.name
-                        if (name.startsWith("Singleton") ||
-                            name.startsWith(".X") ||
-                            name.startsWith("QQ") ||
-                            name.startsWith("xvfb-run")
-                        ) {
-                            try {
-                                file.deleteRecursively()
-                            } catch (_: Exception) {}
-                        }
-                    }
-                }
-            }
-            val qqConfig = File("$ubuntuPath/root/.config/QQ")
-            if (qqConfig.exists() && qqConfig.isDirectory) {
-                qqConfig.listFiles()?.forEach { file ->
-                    val name = file.name
-                    if (name.startsWith("Singleton") || name.contains("lock") || name.startsWith("Crashpad")) {
-                        try {
-                            file.deleteRecursively()
-                        } catch (_: Exception) {}
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-    }
 
     /**
      * 单个客户端异步连接会话：内置有界非阻塞发送队列，杜绝慢客户端引起容器 stdout 背压死锁

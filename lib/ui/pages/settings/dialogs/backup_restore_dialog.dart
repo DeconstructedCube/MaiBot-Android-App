@@ -34,7 +34,6 @@ Future<void> showBackupRestoreDialog({
   bool restoreData = true;
   bool restoreConfig = true;
   bool restorePlugins = true;
-  bool restoreNapcat = true;
   bool isRestoring = false;
 
   await Get.dialog(
@@ -216,13 +215,11 @@ Future<void> showBackupRestoreDialog({
                               onPressed: () {
                                 final allSelected = restoreData &&
                                     restoreConfig &&
-                                    restorePlugins &&
-                                    restoreNapcat;
+                                    restorePlugins;
                                 setState(() {
                                   restoreData = !allSelected;
                                   restoreConfig = !allSelected;
                                   restorePlugins = !allSelected;
-                                  restoreNapcat = !allSelected;
                                 });
                               },
                               style: TextButton.styleFrom(
@@ -230,8 +227,7 @@ Future<void> showBackupRestoreDialog({
                               child: Text(
                                 (restoreData &&
                                         restoreConfig &&
-                                        restorePlugins &&
-                                        restoreNapcat)
+                                        restorePlugins)
                                     ? '取消全选'
                                     : '全选',
                                 style: const TextStyle(fontSize: 12),
@@ -309,27 +305,6 @@ Future<void> showBackupRestoreDialog({
                                 onChanged: (v) =>
                                     setState(() => restorePlugins = v ?? true),
                               ),
-                              Divider(
-                                height: 1,
-                                color: colorScheme.outlineVariant
-                                    .withValues(alpha: 0.3),
-                              ),
-                              CheckboxListTile(
-                                dense: true,
-                                title: const Text(
-                                  'NapCat QQ 账号配置',
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                                subtitle: const Text(
-                                  'napcat/config 目录',
-                                  style: TextStyle(fontSize: 11),
-                                ),
-                                value: restoreNapcat,
-                                onChanged: (v) =>
-                                    setState(() => restoreNapcat = v ?? true),
-                              ),
                             ],
                           ),
                         ),
@@ -359,7 +334,6 @@ Future<void> showBackupRestoreDialog({
                           restoreData: restoreData,
                           restoreConfig: restoreConfig,
                           restorePlugins: restorePlugins,
-                          restoreNapcat: restoreNapcat,
                           restartService: isInitialInstall,
                           showSnackbar: false,
                         );

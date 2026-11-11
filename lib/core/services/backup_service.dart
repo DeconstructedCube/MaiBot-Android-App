@@ -6,11 +6,10 @@ import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import '../constants/scripts.dart' as scripts;
 import 'backend_process_manager.dart';
-import 'config_service.dart';
 import '../utils/file_utils.dart';
 import '../../ui/pages/settings/dialogs/backup_restore_dialog.dart';
 
-/// 备份与恢复服务：负责 MaiBot / NapCat 全量备份与细粒度选择性模块恢复的底层文件与事务处理
+/// 备份与恢复服务：负责 MaiBot 全量备份与细粒度选择性模块恢复的底层文件与事务处理
 class BackupService {
   /// 异步获取本地现有的所有有效备份文件（按修改时间倒序排列，最新的排在最前）
   static Future<List<File>> getAvailableBackupsAsync() async {
@@ -78,7 +77,6 @@ class BackupService {
       'data': false,
       'config': false,
       'plugins': false,
-      'napcat': false,
     };
 
     try {
@@ -94,12 +92,11 @@ class BackupService {
           if (line.startsWith('MaiBot/data/')) result['data'] = true;
           if (line.startsWith('MaiBot/config/')) result['config'] = true;
           if (line.startsWith('MaiBot/plugins/')) result['plugins'] = true;
-          if (line.startsWith('napcat/config/')) result['napcat'] = true;
         }
       }
     } catch (e) {
       Log.w('解析备份目录结构异常: $e', tag: 'BackupService');
-      return {'data': true, 'config': true, 'plugins': true, 'napcat': true};
+      return {'data': true, 'config': true, 'plugins': true};
     }
 
     return result;
@@ -204,7 +201,6 @@ class BackupService {
           final List<String> pathsToCreate = [
             '${scripts.ubuntuPath}/root/MaiBot/config',
             '${scripts.ubuntuPath}/root/MaiBot/plugins',
-            '${scripts.ubuntuPath}/root/napcat/config',
           ];
           for (final path in pathsToCreate) {
             final dir = Directory(path);
@@ -229,7 +225,6 @@ class BackupService {
             'MaiBot/data',
             'MaiBot/config',
             'MaiBot/plugins',
-            'napcat/config',
           ]);
 
           dismissDialog();
@@ -282,7 +277,6 @@ class BackupService {
     bool restoreData = true,
     bool restoreConfig = true,
     bool restorePlugins = true,
-    bool restoreNapcat = true,
     bool restartService = true,
     bool showSnackbar = true,
   }) async {
@@ -305,7 +299,6 @@ class BackupService {
           if (restoreData && available['data'] == true) extractTargets.add('MaiBot/data');
           if (restoreConfig && available['config'] == true) extractTargets.add('MaiBot/config');
           if (restorePlugins && available['plugins'] == true) extractTargets.add('MaiBot/plugins');
-          if (restoreNapcat && available['napcat'] == true) extractTargets.add('napcat/config');
 
           if (extractTargets.isEmpty) {
             if (showSnackbar) {
@@ -316,8 +309,6 @@ class BackupService {
           }
 
           await Directory('${scripts.ubuntuPath}/root/MaiBot')
-              .create(recursive: true);
-          await Directory('${scripts.ubuntuPath}/root/napcat')
               .create(recursive: true);
 
           final args = [
@@ -331,7 +322,6 @@ class BackupService {
 
           final res = await Process.run('${RuntimeEnvir.binPath}/busybox', args);
           if (res.exitCode == 0) {
-            await ConfigService.ensureConfigsSynced();
             Log.i('选择性恢复成功: $extractTargets', tag: 'BackupService');
             if (showSnackbar) {
               Get.snackbar(

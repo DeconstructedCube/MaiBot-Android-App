@@ -14,9 +14,6 @@ class InstallerService {
   /// 记录当前流水线是否为首次/全新安装
   static bool lastInstallWasFresh = false;
 
-  /// NapCat 重装时的一次性临时备份文件路径
-  static String get napcatTempBackupPath =>
-      '${RuntimeEnvir.homePath}/.napcat_reinstall_backup.tar.gz';
 
   /// 检查 Ubuntu 根文件系统是否已就绪
   static bool isRootfsReady() {
@@ -28,7 +25,7 @@ class InstallerService {
     }
     return false;
   }
-  /// 检查容器、核心组件、MaiBot、NapCat 以及 Python 虚拟环境是否已经全量就绪
+  /// 检查容器、核心组件、MaiBot 以及 Python 虚拟环境是否已经全量就绪
   static bool isEnvironmentFullyInstalled() {
     if (!isRootfsReady()) return false;
 
@@ -36,25 +33,15 @@ class InstallerService {
     final maibotDir = Directory('${scripts.ubuntuPath}/root/MaiBot');
     final botPy = File('${maibotDir.path}/bot.py');
     final pyproject = File('${maibotDir.path}/pyproject.toml');
-    final adapterDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins/MaiBot-Napcat-Adapter');
     final venvDir = Directory('${scripts.ubuntuPath}/root/MaiBot/.venv');
     final venvMarker = File('${scripts.ubuntuPath}/root/MaiBot/.venv_sync_ready');
-    final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
-    final napcatEntry = File('${napcatDir.path}/napcat.mjs');
-    final qqBinary = File('${scripts.ubuntuPath}/opt/QQ/qq');
-    final launcherSh = File('${scripts.ubuntuPath}/root/launcher.sh');
 
     return uvExecutable.existsSync() &&
         maibotDir.existsSync() &&
         botPy.existsSync() &&
         pyproject.existsSync() &&
-        adapterDir.existsSync() &&
         venvDir.existsSync() &&
-        venvMarker.existsSync() &&
-        napcatDir.existsSync() &&
-        napcatEntry.existsSync() &&
-        qqBinary.existsSync() &&
-        launcherSh.existsSync();
+        venvMarker.existsSync();
   }
 
 
@@ -269,51 +256,6 @@ class InstallerService {
         if (!success) return false;
       }
 
-      // 4.5 默认适配器克隆
-      final pluginsDir = Directory('${scripts.ubuntuPath}/root/MaiBot/plugins');
-      final adapterDir = Directory('${pluginsDir.path}/MaiBot-Napcat-Adapter');
-      final adapterMain = File('${adapterDir.path}/adapter.py');
-      final adapterPlugin = File('${adapterDir.path}/plugin.py');
-      final adapterManifest = File('${adapterDir.path}/_manifest.json');
-      final adapterInit = File('${adapterDir.path}/__init__.py');
-
-      if (!await adapterDir.exists() ||
-          (!await adapterMain.exists() &&
-              !await adapterPlugin.exists() &&
-              !await adapterManifest.exists() &&
-              !await adapterInit.exists())) {
-        if (await adapterDir.exists()) {
-          await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
-        }
-        reportStage(InstallStage.cloningAdapter, '安装适配器插件...');
-        bool cloneSuccess = false;
-        for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
-          final adapterUrl =
-              '${mirror}https://github.com/Mai-with-u/MaiBot-Napcat-Adapter.git';
-          final label = mirror.isEmpty ? '官方源' : mirror;
-          onLog?.call('\x1b[36m[下载]\x1b[0m 适配器 ($label)...\r\n');
-          await _runInProot('rm -rf /root/MaiBot/plugins/MaiBot-Napcat-Adapter');
-          final res = await _runInProot(
-            'git -c gc.auto=0 clone --depth=1 --branch main $adapterUrl /root/MaiBot/plugins/MaiBot-Napcat-Adapter',
-            onLog: onLog,
-            timeout: const Duration(minutes: 3),
-          );
-          if (res) {
-            cloneSuccess = true;
-            break;
-          }
-        }
-        if (!cloneSuccess) {
-          onLog?.call('\x1b[31m[错误]\x1b[0m 适配器安装失败，请检查网络\r\n');
-          return false;
-        }
-
-        final adapterConfig = File('${adapterDir.path}/config.toml');
-        if (await adapterConfig.exists()) {
-          await adapterConfig.delete();
-        }
-      }
-
       // 5. 同步 Python 依赖库
       final venvDir = Directory('${scripts.ubuntuPath}/root/MaiBot/.venv');
       final venvMarker = File('${scripts.ubuntuPath}/root/MaiBot/.venv_sync_ready');
@@ -349,70 +291,6 @@ class InstallerService {
         );
         await _runInProot(
           'ln -sf /root/MaiBot/.venv/bin/pip /usr/local/bin/pip; ln -sf /root/MaiBot/.venv/bin/python /usr/local/bin/python',
-        );
-      }
-
-      // 6. 安装 NapCat（直接使用 Fork 维护仓库安装脚本）
-      final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
-      final qqBinary = File('${scripts.ubuntuPath}/opt/QQ/qq');
-      final launcherSh = File('${scripts.ubuntuPath}/root/launcher.sh');
-      final napcatEntry = File('${napcatDir.path}/napcat.mjs');
-      if (!await napcatDir.exists() ||
-          !await qqBinary.exists() ||
-          !await launcherSh.exists() ||
-          !await napcatEntry.exists()) {
-        final tempBackup = File(napcatTempBackupPath);
-        final configDir = Directory('${scripts.ubuntuPath}/root/napcat/config');
-        if (await napcatDir.exists()) {
-          if (!await tempBackup.exists() && await configDir.exists()) {
-            onLog?.call('\x1b[33m[NapCat]\x1b[0m 暂存配置文件...\r\n');
-            await Process.run('${RuntimeEnvir.binPath}/busybox', [
-              'tar',
-              '-czf',
-              napcatTempBackupPath,
-              '-C',
-              '${scripts.ubuntuPath}/root',
-              'napcat/config',
-            ]);
-          }
-          onLog?.call('\x1b[33m[NapCat]\x1b[0m 清理旧目录...\r\n');
-          await Process.run(
-              '${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', napcatDir.path]);
-        }
-
-        reportStage(InstallStage.installingNapcat, '安装 NapCat 组件...');
-        await _runInProot(
-          'dpkg --configure -a || true && apt-get --fix-broken install -y',
-          onLog: onLog,
-        );
-
-        bool downloaded = false;
-        for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
-          final url =
-              '${mirror}https://raw.githubusercontent.com/DeconstructedCube/napcat-linux-installer/refs/heads/main/install.sh';
-          final label = mirror.isEmpty ? '官方源' : mirror;
-          onLog?.call('\x1b[36m[NapCat]\x1b[0m 正在从 $label 获取安装脚本...\r\n');
-          final res = await _runInProot(
-            'curl -sL -f --connect-timeout 10 --max-time 30 -o /root/napcat.sh $url',
-            onLog: onLog,
-            timeout: const Duration(seconds: 40),
-          );
-          if (res) {
-            downloaded = true;
-            break;
-          }
-        }
-        if (!downloaded) {
-          onLog?.call('\x1b[31m[错误]\x1b[0m 获取 NapCat 安装脚本失败，请检查网络\r\n');
-          return false;
-        }
-
-        final success = await _runInProot('bash /root/napcat.sh', onLog: onLog);
-        if (!success) return false;
-
-        await _restoreAndCleanNapcatTempBackup(
-          (msg) => reportStage(InstallStage.restoringBackup, msg),
-          onLog,
         );
       }
 
@@ -786,105 +664,4 @@ class InstallerService {
     return result.success;
   }
 
-  static Future<void> _restoreAndCleanNapcatTempBackup(
-    Function(String) onProgress,
-    Function(String)? onLog,
-  ) async {
-    final tempBackupFile = File(napcatTempBackupPath);
-    if (!await tempBackupFile.exists()) return;
-
-    try {
-      onProgress('恢复 NapCat 配置...');
-      onLog?.call('\x1b[36m[NapCat]\x1b[0m 恢复配置文件...\r\n');
-
-      await Directory('${scripts.ubuntuPath}/root/napcat').create(recursive: true);
-      final res = await Process.run('${RuntimeEnvir.binPath}/busybox', [
-        'tar',
-        '-xzf',
-        napcatTempBackupPath,
-        '-C',
-        '${scripts.ubuntuPath}/root',
-      ]);
-
-      if (res.exitCode == 0) {
-        onLog?.call('\x1b[32m[NapCat]\x1b[0m 配置恢复成功\r\n');
-        Log.i('NapCat 配置恢复成功', tag: 'InstallerService');
-      } else {
-        onLog?.call('\x1b[31m[错误]\x1b[0m NapCat 配置恢复失败: ${res.stderr}\r\n');
-        Log.e('NapCat 配置恢复失败: ${res.stderr}', tag: 'InstallerService');
-      }
-    } catch (e) {
-      Log.e('恢复 NapCat 备份异常: $e', tag: 'InstallerService');
-    } finally {
-      try {
-        if (await tempBackupFile.exists()) {
-          await tempBackupFile.delete();
-          onLog?.call('\x1b[32m[NapCat]\x1b[0m 清理临时备份\r\n');
-        }
-      } catch (e) {
-        Log.e('清理 NapCat 临时备份失败: $e', tag: 'InstallerService');
-      }
-    }
-  }
-
-  static Future<bool> prepareNapcatReinstall() async {
-    try {
-      final configDir = Directory('${scripts.ubuntuPath}/root/napcat/config');
-      final tempBackupFile = File(napcatTempBackupPath);
-
-      if (await configDir.exists()) {
-        if (await tempBackupFile.exists()) {
-          try {
-            await tempBackupFile.delete();
-          } catch (_) {}
-        }
-        final tarRes = await Process.run('${RuntimeEnvir.binPath}/busybox', [
-          'tar',
-          '-czf',
-          napcatTempBackupPath,
-          '-C',
-          '${scripts.ubuntuPath}/root',
-          'napcat/config',
-        ]);
-        if (tarRes.exitCode == 0) {
-          Log.i('NapCat 配置已暂存', tag: 'InstallerService');
-        } else {
-          Log.w('NapCat 配置暂存失败: ${tarRes.stderr}', tag: 'InstallerService');
-        }
-      }
-
-      Log.i('卸载 LinuxQQ...', tag: 'InstallerService');
-      await _runInProot(
-        'dpkg -P --force-depends linuxqq 2>/dev/null || dpkg -r --force-depends linuxqq 2>/dev/null || true',
-        timeout: const Duration(seconds: 30),
-      );
-
-      final qqDir = Directory('${scripts.ubuntuPath}/opt/QQ');
-      if (await qqDir.exists()) {
-        await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', qqDir.path]);
-      }
-
-      Log.i('清理 NapCat 目录与脚本...', tag: 'InstallerService');
-      final napcatDir = Directory('${scripts.ubuntuPath}/root/napcat');
-      if (await napcatDir.exists()) {
-        await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', napcatDir.path]);
-      }
-
-      final launcherFile = File('${scripts.ubuntuPath}/root/launcher.sh');
-      if (await launcherFile.exists()) {
-        await launcherFile.delete();
-      }
-
-      final installerScript = File('${scripts.ubuntuPath}/root/napcat.sh');
-      if (await installerScript.exists()) {
-        await installerScript.delete();
-      }
-
-      Log.i('NapCat 与 LinuxQQ 卸载完成', tag: 'InstallerService');
-      return true;
-    } catch (e) {
-      Log.e('准备重新安装 NapCat 异常: $e', tag: 'InstallerService');
-      return false;
-    }
-  }
 }

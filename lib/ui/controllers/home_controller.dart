@@ -17,8 +17,8 @@ import '../../core/services/progress_tracker.dart';
 import '../../core/services/socket_stream_client.dart';
 import '../../core/services/backend_process_manager.dart';
 import '../../core/state/app_lifecycle_state_machine.dart';
-import 'napcat_controller.dart';
-import 'napcat_log_parser.dart';
+import '../../core/constants/scripts.dart';
+import 'maibot_log_parser.dart';
 import 'terminal_tab_manager.dart';
 import 'webview_controller.dart';
 import '../pages/permission_request_page.dart';
@@ -35,7 +35,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   // 前台服务 PTY 转发 Socket 客户端
   late final SocketStreamClient maibotClient;
-  late final SocketStreamClient napcatClient;
 
   late Terminal terminal = Terminal(
     maxLines: 5000,
@@ -44,16 +43,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     },
     onResize: (width, height, pixelWidth, pixelHeight) {
       Log.d('maibot terminal resize: $width x $height', tag: 'HomeController');
-    },
-  );
-
-  late Terminal napcatShowTerminal = Terminal(
-    maxLines: 5000,
-    onOutput: (data) {
-      napcatClient.socket?.add(utf8.encode(data));
-    },
-    onResize: (width, height, pixelWidth, pixelHeight) {
-      Log.d('napcat terminal resize: $width x $height', tag: 'HomeController');
     },
   );
 
@@ -67,7 +56,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   String get currentProgress => progressTracker.currentProgress;
 
   final WebviewController webviewController = Get.put(WebviewController());
-  final NapcatController napcatController = Get.put(NapcatController());
+  final RxString maiBotWebUiToken = ''.obs;
 
   void _syncProgressFromLifecycle() {
     progressTracker.updateFromStateMachine(
@@ -77,18 +66,10 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     update();
   }
 
-  /// 检查状态机是否满足进入主控制台的条件（Web 端口已就绪 且 QQ 登录已处理 且 应用在前台 且 非扫码弹窗中）
+  /// 检查状态机是否满足进入主控制台的条件（Web 端口已就绪 且 应用在前台）
   void _checkAndNavigateToWebview() {
-    if (napcatController.isQrcodeProcessed) {
-      if (!lifecycle.loginReady) {
-        lifecycle.markLoginReady();
-        _syncProgressFromLifecycle();
-      }
-    }
-
     if (lifecycle.canEnterWebview &&
         _isAppInForeground &&
-        !napcatController.isQrcodeShowing &&
         !webviewController.webviewHasOpen) {
       _portProber.cancel();
       webviewController.navigateToWebview();
@@ -96,12 +77,19 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   }
 
   void _handleMaibotLine(String line) {
-    napcatController.handleMaibotOutput(line);
-    final cleanLine = NapcatLogParser.stripAnsi(line);
+    final cleanLine = MaibotLogParser.stripAnsi(line);
+    final token = MaibotLogParser.parseMaibotToken(cleanLine);
+    if (token != null) {
+      maiBotWebUiToken.value = token;
+      Log.i('成功从日志中抓取到 MaiBot Token: $token', tag: 'MaiBot');
+    } else if (cleanLine.contains('WebUI Token 已加载') &&
+        maiBotWebUiToken.value.isEmpty) {
+      unawaited(reloadTokensFromDisk());
+    }
     if (cleanLine.contains('访问地址:')) {
       lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
       _syncProgressFromLifecycle();
-      unawaited(napcatController.reloadTokensFromDisk().then((_) {
+      unawaited(reloadTokensFromDisk().then((_) {
         _checkAndNavigateToWebview();
       }));
       _checkAndNavigateToWebview();
@@ -109,9 +97,26 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  void _handleNapcatLine(String line) {
-    napcatController.handleNapcatOutput(line);
-    _checkAndNavigateToWebview();
+  /// 从本地 /root/MaiBot/data/webui.json 直接读取 MaiBot WebUI 登录凭证 (Token)
+  Future<bool> reloadTokensFromDisk() async {
+    try {
+      final file = File('$ubuntuPath/root/MaiBot/data/webui.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final parsed = jsonDecode(content);
+        if (parsed is Map) {
+          final token = parsed['access_token']?.toString() ?? '';
+          if (token.isNotEmpty) {
+            maiBotWebUiToken.value = token;
+            Log.i('成功从 webui.json 读取到 MaiBot Token: $token', tag: 'MaiBot');
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      Log.e('读取 MaiBot webui.json 失败: $e', tag: 'MaiBot');
+    }
+    return false;
   }
 
   /// 启动有界端口重试探测，取代旧的无限 Timer.periodic
@@ -123,7 +128,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
           Log.i('有界探测命中 Web 端口 127.0.0.1:$port，标记端口就绪', tag: 'MaiBot');
           lifecycle.markPortsReady();
           _syncProgressFromLifecycle();
-          unawaited(napcatController.reloadTokensFromDisk().then((_) {
+          unawaited(reloadTokensFromDisk().then((_) {
             _checkAndNavigateToWebview();
           }));
           _checkAndNavigateToWebview();
@@ -168,11 +173,11 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   /// 初始化环境并驱动安装/启动流水线
   Future<void> loadMaiBot() async {
-    // 区分原生守护进程（PTY 20001/20002）与业务 Web 端口（8001/6185）
+    // 区分原生守护进程（PTY 20001）与业务 Web 端口（8001/6185）
     if (await BackendProcessManager.isDaemonRunning()) {
       Log.i('检测到原生守护进程已在运行，跳过安装流水线直接连接', tag: 'MaiBot');
       lifecycle.markBackendRequested(message: '正在恢复后台运行会话...');
-      await napcatController.reloadTokensFromDisk();
+      await reloadTokensFromDisk();
       if (await BackendProcessManager.isWebServiceReady()) {
         lifecycle.markPortsReady();
       } else {
@@ -180,7 +185,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       }
       _syncProgressFromLifecycle();
       maibotClient.connect();
-      napcatClient.connect();
       _checkAndNavigateToWebview();
       return;
     }
@@ -247,7 +251,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     await BackendProcessManager.startService();
 
     maibotClient.connect();
-    napcatClient.connect();
     _startWebPortProbe();
   }
 
@@ -256,18 +259,14 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     super.onInit();
 
     terminalTabManager = TerminalTabManager();
-    terminalTabManager.initializeFixedTabs(terminal, napcatShowTerminal);
+    terminalTabManager.initializeFixedTabs(terminal);
 
     maibotClient = SocketStreamClient(
       port: Ports.maibotPtySocket,
       onData: (event) => terminal.write(event),
       onLine: _handleMaibotLine,
     );
-    napcatClient = SocketStreamClient(
-      port: Ports.napcatPtySocket,
-      onData: (event) => napcatShowTerminal.write(event),
-      onLine: _handleNapcatLine,
-    );
+    unawaited(reloadTokensFromDisk());
 
     ever(BackendProcessManager.maibotState, (state) {
       if (state == ProcessState.running) {
@@ -325,7 +324,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       _portProber.dispose();
       progressTracker.dispose();
       maibotClient.dispose();
-      napcatClient.dispose();
     } catch (e) {
       Log.e('清理终端引用时出错: $e', tag: 'MaiBot');
     }

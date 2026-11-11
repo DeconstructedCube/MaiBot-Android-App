@@ -8,7 +8,6 @@ import 'package:global_repository/global_repository.dart';
 import '../../../core/constants/scripts.dart' as scripts;
 import '../../../core/services/backend_process_manager.dart';
 import '../../../core/services/backup_service.dart';
-import '../../../core/services/installer_service.dart';
 
 /// 设置页中的维护与重置操作（重装/清理/退出）
 class MaintenanceActions {
@@ -133,115 +132,6 @@ class MaintenanceActions {
     }
   }
 
-  /// 更新或重装 NapcatQQ：卸载 QQ 和 NapCat 并暂存配置
-  static Future<void> reinstallNapcat() async {
-    final confirm = await Get.dialog<bool>(
-      AlertDialog(
-        icon: const Icon(Icons.refresh_rounded, size: 28, color: Colors.orange),
-        title: const Text('确认重新安装 NapCat'),
-        content: const Text(
-          '此操作将卸载 QQ 与 NapCat 并暂存当前配置。\n\n'
-          '应用退出并重新打开后，将自动重新安装 NapCat 并恢复配置，确定继续吗？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(result: false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Get.back(result: true),
-            child: const Text('确定重装'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-    BuildContext? dialogContext;
-    final canCloseDialog = false.obs;
-    unawaited(
-      Get.dialog(
-        Builder(
-          builder: (ctx) {
-            dialogContext = ctx;
-            return Obx(
-              () => PopScope(
-                canPop: canCloseDialog.value,
-                child: const Center(
-                  child: Card(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('正在暂存配置并清理 NapCat...', style: TextStyle(fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        barrierDismissible: false,
-      ),
-    );
-
-    void dismissLoadingDialog() {
-      canCloseDialog.value = true;
-      final ctx = dialogContext;
-      dialogContext = null;
-      if (ctx != null && ctx.mounted) {
-        Navigator.of(ctx).pop();
-      } else if (Get.isDialogOpen == true) {
-        Get.back(canPop: false);
-      }
-    }
-
-    try {
-      final success = await BackendProcessManager.runMaintenanceTransaction(
-        autoRestart: false,
-        action: () async {
-          return await InstallerService.prepareNapcatReinstall();
-        },
-      );
-
-      dismissLoadingDialog();
-      if (success) {
-        Get.snackbar(
-          '清理完成',
-          'NapCat 与 QQ 已卸载，应用即将退出，请重新打开以完成重装',
-          snackPosition: SnackPosition.BOTTOM,
-          duration: const Duration(seconds: 3),
-        );
-
-        Future.delayed(const Duration(seconds: 2), () async {
-          await SystemNavigator.pop();
-        });
-      } else {
-        Get.snackbar(
-          '操作失败',
-          '准备重新安装失败，请查看运行日志',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
-      }
-    } catch (e) {
-      dismissLoadingDialog();
-      Log.e('重新安装 NapCat 失败: $e', tag: 'MaiBot');
-      Get.snackbar(
-        '操作失败',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-    }
-  }
 
   /// 重置 Python 环境：删除虚拟环境后退出应用
   static Future<void> resetPythonEnv() async {

@@ -82,7 +82,7 @@ void main() {
       // Interleave a control frame right between the two split UTF-8 byte chunks!
       final controlFrame = SocketStreamClient.encodeFrame(
         SocketStreamClient.frameControlJson,
-        utf8.encode('{"service":"napcat","state":"STARTING","retry":0,"pid":99}'),
+        utf8.encode('{"service":"maibot","state":"STARTING","retry":0,"pid":99}'),
       );
       final frame2 = SocketStreamClient.encodeFrame(
         SocketStreamClient.framePtyData,
@@ -96,7 +96,7 @@ void main() {
         client.feedRawBytes(combinedWireBytes.sublist(i, end));
       }
 
-      expect(stateEvents, ['napcat:STARTING']);
+      expect(stateEvents, ['maibot:STARTING']);
       expect(receivedLines, ['🔑 WebUI 登录 Token: a1b2c3d4 麦麦启动成功 🎉']);
 
       client.dispose();

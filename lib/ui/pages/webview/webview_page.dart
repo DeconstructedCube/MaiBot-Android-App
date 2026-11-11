@@ -28,7 +28,6 @@ class _WebViewPageState extends State<WebViewPage> {
 
   DateTime? _lastBackPressedTime;
   late final WebViewController _maiBotController;
-  late final WebViewController _napCatController;
   final Map<String, WebViewController> _customControllers =
       {}; // 存储自定义 WebView 控制器，使用 URL 作为 key
 
@@ -38,7 +37,6 @@ class _WebViewPageState extends State<WebViewPage> {
   bool _maiBotInitialized = false;
 
   Worker? _customWebViewsWorker;
-  Worker? _napCatTokenWorker;
 
   void _switchTab(int newIndex) {
     if (_currentIndex == newIndex) return;
@@ -51,7 +49,6 @@ class _WebViewPageState extends State<WebViewPage> {
   void initState() {
     super.initState();
     _initMaiBotController();
-    _initNapCatController();
 
     // 监听自定义 WebView 列表变化,清理已删除的控制器
     _customWebViewsWorker =
@@ -71,7 +68,6 @@ class _WebViewPageState extends State<WebViewPage> {
   @override
   void dispose() {
     _customWebViewsWorker?.dispose();
-    _napCatTokenWorker?.dispose();
     super.dispose();
   }
 
@@ -198,51 +194,6 @@ class _WebViewPageState extends State<WebViewPage> {
     });
   }
 
-  void _initNapCatController() {
-    _napCatController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (NavigationRequest request) {
-            // 拦截外域URL
-            if (!_isLocalUrl(request.url)) {
-              debugPrint('Intercepting external URL: ${request.url}');
-              _launchInBrowser(request.url);
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-          onPageFinished: (String url) {
-            _disableZoom(_napCatController);
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint('NapCat WebView error: ${error.description}');
-          },
-        ),
-      );
-
-    // 监听 Token 变化
-    _napCatTokenWorker =
-        ever(homeController.napcatController.napCatWebUiToken, (String token) {
-      if (token.isNotEmpty) {
-        final url = 'http://127.0.0.1:${Ports.napcatWebUi}/webui?token=$token';
-        _napCatController.loadRequest(Uri.parse(url));
-      }
-    });
-
-    // 初始加载
-    if (homeController.napcatController.napCatWebUiToken.isNotEmpty) {
-      final url =
-          'http://127.0.0.1:${Ports.napcatWebUi}/webui?token=${homeController.napcatController.napCatWebUiToken.value}';
-      _napCatController.loadRequest(Uri.parse(url));
-    } else {
-      _napCatController.loadRequest(
-          Uri.parse('http://127.0.0.1:${Ports.napcatWebUi}/webui'));
-    }
-
-    _configureAndroidPlatform(_napCatController, enableDebugging: true);
-  }
 
   // 创建自定义 WebView 控制器
   WebViewController _createCustomController(String url) {
@@ -355,8 +306,6 @@ class _WebViewPageState extends State<WebViewPage> {
       );
     }
     return Obx(() {
-      final bool napCatEnabled =
-          homeController.napcatController.napCatWebUiEnabledRx.value;
       final customWebViews = homeController.webviewController.customWebViews;
 
       final List<Widget> pages = [
@@ -370,22 +319,11 @@ class _WebViewPageState extends State<WebViewPage> {
               controller: _maiBotController),
         ),
 
-        // 2. NapCat 配置页面（仅在启用时添加）
-        if (napCatEnabled)
-          Visibility(
-            key: const ValueKey('napcat_webview_visibility'),
-            visible: _currentIndex == 1,
-            maintainState: true,
-            child: WebViewWidget(
-                key: const ValueKey('napcat_webview'),
-                controller: _napCatController),
-          ),
-
         // 3. 自定义 WebView 页面
         ...List.generate(customWebViews.length, (index) {
           final webview = customWebViews[index];
           final url = webview['url'] ?? '';
-          final int pageIndex = index + (napCatEnabled ? 2 : 1);
+          final int pageIndex = index + 1;
           return Visibility(
             key: ValueKey('custom_webview_visibility_$url'),
             visible: _currentIndex == pageIndex,
@@ -482,7 +420,6 @@ class _WebViewPageState extends State<WebViewPage> {
                   SettingsPage(
                     key: const ValueKey('settings_page'),
                     maiBotController: _maiBotController,
-                    napCatController: _napCatController,
                     onNavigate: (index) {
                       _switchTab(index);
                     },

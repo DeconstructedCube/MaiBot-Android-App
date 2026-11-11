@@ -7,7 +7,7 @@ import 'package:get/get.dart';
 import '../../../controllers/home_controller.dart';
 import '../dialogs/webview_crud_dialogs.dart';
 
-/// 设置页：控制面板开关、登录 Token 管理与自定义 WebView 面板列表卡片
+/// 设置页：登录 Token 管理与自定义 WebView 面板列表卡片
 class TokenAndWebviewCard extends StatelessWidget {
   final HomeController homeController;
 
@@ -38,67 +38,13 @@ class TokenAndWebviewCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Obx(() {
-            final enabled =
-                homeController.napcatController.napCatWebUiEnabledRx.value;
-            return SwitchListTile(
-              secondary: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.web_rounded,
-                  color: Colors.teal,
-                  size: 22,
-                ),
-              ),
-              title: const Text(
-                'NapCat 控制面板',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-              ),
-              subtitle: Text(
-                enabled
-                    ? '已开启：可在底部导航栏访问 NapCat 控制台'
-                    : '已关闭：底部导航栏不显示 NapCat 面板',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              value: enabled,
-              onChanged: (bool value) {
-                homeController.napcatController.setNapCatWebUiEnabled(value);
-                Get.snackbar(
-                  value ? 'WebUI 已启用' : 'WebUI 已禁用',
-                  value ? 'NapCat 标签页已显示，可直接访问控制面板' : 'NapCat 标签页已隐藏',
-                  snackPosition: SnackPosition.BOTTOM,
-                  duration: const Duration(seconds: 2),
-                );
-              },
-            );
-          }),
-          const Divider(height: 1, indent: 56),
-          Obx(() {
             final token =
-                homeController.napcatController.maiBotWebUiToken.value;
+                homeController.maiBotWebUiToken.value;
             return _buildTokenTile(
               context: context,
               icon: Icons.key_rounded,
               iconColor: Colors.purple,
               title: 'MaiBot 登录 Token',
-              token: token,
-            );
-          }),
-          const Divider(height: 1, indent: 56),
-          Obx(() {
-            final token =
-                homeController.napcatController.napCatWebUiToken.value;
-            return _buildTokenTile(
-              context: context,
-              icon: Icons.vpn_key_rounded,
-              iconColor: Colors.deepPurple,
-              title: 'NapCat 登录 Token',
               token: token,
             );
           }),

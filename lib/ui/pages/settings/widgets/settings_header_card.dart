@@ -16,27 +16,23 @@ class SettingsHeaderCard extends StatelessWidget {
 
   ({String label, Color dotColor}) _resolveStatus(
     ProcessState maibot,
-    ProcessState napcat,
     int retry,
   ) {
     if (maibot == ProcessState.running) {
       return (label: '服务运行中', dotColor: const Color(0xFF69F0AE));
     }
-    if (maibot == ProcessState.starting || napcat == ProcessState.starting) {
+    if (maibot == ProcessState.starting) {
       return (label: '正在启动...', dotColor: const Color(0xFFFFD740));
     }
-    if (maibot == ProcessState.restarting || napcat == ProcessState.restarting) {
+    if (maibot == ProcessState.restarting) {
       final suffix = retry > 0 ? ' (#$retry)' : '';
       return (label: '重启恢复中$suffix', dotColor: const Color(0xFFFFAB40));
     }
-    if (maibot == ProcessState.error || napcat == ProcessState.error) {
+    if (maibot == ProcessState.error) {
       return (label: '服务异常', dotColor: const Color(0xFFFF5252));
     }
     if (maibot == ProcessState.stopping) {
       return (label: '正在停止...', dotColor: const Color(0xFFFFAB40));
-    }
-    if (napcat == ProcessState.running) {
-      return (label: 'NapCat 运行中', dotColor: const Color(0xFF69F0AE));
     }
     return (label: '后台待命', dotColor: const Color(0xFFB0BEC5));
   }
@@ -102,7 +98,6 @@ class SettingsHeaderCard extends StatelessWidget {
           Obx(() {
             final status = _resolveStatus(
               BackendProcessManager.maibotState.value,
-              BackendProcessManager.napcatState.value,
               BackendProcessManager.maibotRetryCount.value,
             );
             return Container(

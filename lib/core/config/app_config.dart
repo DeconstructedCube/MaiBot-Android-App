@@ -204,15 +204,12 @@ class MirrorRegistry {
 class Ports {
   // PTY 输出转发 Socket（前台服务监听，UI 侧连接）
   static const int maibotPtySocket = 20001;
-  static const int napcatPtySocket = 20002;
 
   // Web 服务端口
   static const int maibotWeb = 8001;
-  static const int napcatWebUi = 6099;
-  static const int onebotWsDefault = 8095;
 
   // 原生守护进程 PTY 存活探测端口
-  static const List<int> ptyProbePorts = [maibotPtySocket, napcatPtySocket];
+  static const List<int> ptyProbePorts = [maibotPtySocket];
 
   // 业务 Web 就绪探测端口（MaiBot 启动完成后任一端口可连即视为 Web 就绪）
   static const List<int> localhostProbePorts = [maibotWeb, 6185];
