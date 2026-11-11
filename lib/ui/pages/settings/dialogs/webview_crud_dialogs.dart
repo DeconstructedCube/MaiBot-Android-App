@@ -30,7 +30,7 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
               labelText: 'URL 地址',
               hintText: '例如：8080/webui',
               helperText: '默认自动补全 http://127.0.0.1:',
-              prefixIcon: const Icon(Icons.link_rounded),
+              prefixIcon: Icon(Icons.link_rounded),
             ),
             keyboardType: TextInputType.url,
           ),
