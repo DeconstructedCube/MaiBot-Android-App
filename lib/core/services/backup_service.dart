@@ -9,17 +9,30 @@ import 'backend_process_manager.dart';
 import '../utils/file_utils.dart';
 import '../../ui/pages/settings/dialogs/backup_restore_dialog.dart';
 
+/// 本地备份文件元数据条目
+class BackupEntry {
+  final File file;
+  final DateTime modified;
+  final int sizeBytes;
+
+  const BackupEntry({
+    required this.file,
+    required this.modified,
+    required this.sizeBytes,
+  });
+}
+
 /// 备份与恢复服务：负责 MaiBot 全量备份与细粒度选择性模块恢复的底层文件与事务处理
 class BackupService {
-  /// 异步获取本地现有的所有有效备份文件（按修改时间倒序排列，最新的排在最前）
-  static Future<List<File>> getAvailableBackupsAsync() async {
+  /// 异步获取本地现有的所有有效备份条目（包含修改时间与大小，按修改时间倒序排列）
+  static Future<List<BackupEntry>> getAvailableBackupEntriesAsync() async {
     try {
       final backupDirs = [
         getMaiBotBackupDirectory(),
         Directory('${RuntimeEnvir.homePath}/backups'),
       ];
       final seenPaths = <String>{};
-      final fileEntries = <({File file, DateTime modified})>[];
+      final fileEntries = <BackupEntry>[];
 
       for (final backupDir in backupDirs) {
         if (!await backupDir.exists()) continue;
@@ -30,7 +43,13 @@ class BackupService {
             try {
               final stat = await entity.stat();
               if (stat.size > 1024) {
-                fileEntries.add((file: entity, modified: stat.modified));
+                fileEntries.add(
+                  BackupEntry(
+                    file: entity,
+                    modified: stat.modified,
+                    sizeBytes: stat.size,
+                  ),
+                );
               }
             } catch (_) {}
           }
@@ -38,11 +57,17 @@ class BackupService {
       }
 
       fileEntries.sort((a, b) => b.modified.compareTo(a.modified));
-      return fileEntries.map((e) => e.file).toList();
+      return fileEntries;
     } catch (e) {
       Log.e('异步扫描备份文件失败: $e', tag: 'BackupService');
       return [];
     }
+  }
+
+  /// 异步获取本地现有的所有有效备份文件（按修改时间倒序排列，最新的排在最前）
+  static Future<List<File>> getAvailableBackupsAsync() async {
+    final entries = await getAvailableBackupEntriesAsync();
+    return entries.map((e) => e.file).toList();
   }
 
   /// 确保获取存储权限（支持 Android 11+ 所有文件权限与旧版存储权限），无法获取时降级使用内部目录

@@ -33,9 +33,6 @@ class _WebViewPageState extends State<WebViewPage> {
 
   final HomeController homeController = Get.find<HomeController>();
 
-  // 标记 MaiBot WebView 是否初始化
-  bool _maiBotInitialized = false;
-
   Worker? _customWebViewsWorker;
 
   void _switchTab(int newIndex) {
@@ -153,6 +150,7 @@ class _WebViewPageState extends State<WebViewPage> {
   }
 
   void _initMaiBotController() {
+    final initialPort = homeController.activeWebPort.value;
     _maiBotController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -169,29 +167,27 @@ class _WebViewPageState extends State<WebViewPage> {
           },
           onPageFinished: (String url) {
             _injectClipboardScript(_maiBotController);
-            _disableZoom(_maiBotController);
+            _configureViewport(_maiBotController);
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('MaiBot WebView error: ${error.description}');
           },
         ),
       )
-      ..loadRequest(Uri.parse('http://127.0.0.1:${Ports.maibotWeb}'));
+      ..loadRequest(Uri.parse('http://127.0.0.1:$initialPort'));
 
     _configureAndroidPlatform(_maiBotController, enableDebugging: kDebugMode);
 
     _maiBotController.addJavaScriptChannel(
       'Android',
       onMessageReceived: (JavaScriptMessage message) {
-        if (message.message == 'getClipboardData') {
-          _getClipboardData(_maiBotController);
+        final msg = message.message;
+        if (msg == 'getClipboardData' || msg.startsWith('getClipboardData:')) {
+          final reqId = msg.contains(':') ? msg.substring('getClipboardData:'.length) : '';
+          _getClipboardData(_maiBotController, reqId);
         }
       },
     );
-
-    setState(() {
-      _maiBotInitialized = true;
-    });
   }
 
 
@@ -218,7 +214,7 @@ class _WebViewPageState extends State<WebViewPage> {
             return NavigationDecision.navigate;
           },
           onPageFinished: (String pageUrl) {
-            _disableZoom(controller);
+            _configureViewport(controller);
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('Custom WebView error: ${error.description}');
@@ -246,19 +242,36 @@ class _WebViewPageState extends State<WebViewPage> {
 
   void _injectClipboardScript(WebViewController controller) {
     const String jsCode = '''
-      navigator.clipboard.readText = function () {
-        return new Promise((resolve) => {
-          Android.postMessage('getClipboardData');
-          setTimeout(() => {
-            resolve(window.clipboardText || '');
-          }, 80);
-        });
-      };
+      (function() {
+        window.__clipboardResolvers = window.__clipboardResolvers || {};
+        window.__resolveClipboard = function(id, text) {
+          var resolver = window.__clipboardResolvers[id];
+          if (resolver) {
+            delete window.__clipboardResolvers[id];
+            resolver(text || '');
+          }
+        };
+        if (navigator.clipboard) {
+          navigator.clipboard.readText = function () {
+            return new Promise((resolve) => {
+              var id = String(Date.now()) + '_' + Math.random().toString(36).slice(2);
+              window.__clipboardResolvers[id] = resolve;
+              Android.postMessage('getClipboardData:' + id);
+              setTimeout(() => {
+                if (window.__clipboardResolvers[id]) {
+                  delete window.__clipboardResolvers[id];
+                  resolve('');
+                }
+              }, 1500);
+            });
+          };
+        }
+      })();
     ''';
     controller.runJavaScript(jsCode);
   }
 
-  void _disableZoom(WebViewController controller) {
+  void _configureViewport(WebViewController controller) {
     const String jsCode = '''
       (function() {
         var meta = document.querySelector('meta[name="viewport"]');
@@ -276,35 +289,21 @@ class _WebViewPageState extends State<WebViewPage> {
     controller.runJavaScript(jsCode);
   }
 
-  Future<void> _getClipboardData(WebViewController controller) async {
+  Future<void> _getClipboardData(WebViewController controller, String reqId) async {
     final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
     final text = clipboardData?.text ?? '';
-    controller.runJavaScript('window.clipboardText = ${jsonEncode(text)};');
+    if (reqId.isNotEmpty) {
+      await controller.runJavaScript(
+        'window.__resolveClipboard && window.__resolveClipboard(${jsonEncode(reqId)}, ${jsonEncode(text)});',
+      );
+    } else {
+      await controller.runJavaScript('window.clipboardText = ${jsonEncode(text)};');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (!_maiBotInitialized) {
-      return Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(
-                '正在加载控制面板...',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
     return Obx(() {
       final customWebViews = homeController.webviewController.customWebViews;
 
@@ -372,12 +371,21 @@ class _WebViewPageState extends State<WebViewPage> {
             unawaited(() async {
               if (didPop) return;
 
-              // 1. 如果当前不是 MaiBot 主控制台标签页，按返回键优先返回主标签页
+              // 1. 如果当前是自定义 WebView 且内部可回退，优先回退页面历史
+              if (_currentIndex > 0 && _currentIndex <= customWebViews.length) {
+                final customUrl = customWebViews[_currentIndex - 1]['url'] ?? '';
+                final customCtrl = _customControllers[customUrl];
+                if (customCtrl != null && await customCtrl.canGoBack()) {
+                  await customCtrl.goBack();
+                  return;
+                }
+              }
+
+              // 2. 如果当前不是 MaiBot 主控制台标签页，按返回键优先返回主标签页
               if (_currentIndex != 0) {
                 _switchTab(0);
                 return;
               }
-
               // 2. 如果 MaiBot WebView 内部有历史页面可回退，则回退上一页
               if (await _maiBotController.canGoBack()) {
                 await _maiBotController.goBack();

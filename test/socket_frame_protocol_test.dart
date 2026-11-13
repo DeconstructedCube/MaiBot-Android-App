@@ -11,10 +11,14 @@ void main() {
       final receivedLines = <String>[];
       final stateEvents = <String>[];
       bool wasReplayingDuringHistory = false;
+      int replayStartCount = 0;
 
       late SocketStreamClient client;
       client = SocketStreamClient(
         port: 20001,
+        onHistoryReplayStart: () {
+          replayStartCount++;
+        },
         onData: (chunk) {
           if (client.isReplaying) {
             wasReplayingDuringHistory = true;
@@ -26,7 +30,6 @@ void main() {
           stateEvents.add('$service:$state:$retry:$pid');
         },
       );
-
       final histFrame = SocketStreamClient.encodeFrame(
         SocketStreamClient.frameHistoryData,
         utf8.encode('History line 1\n'),
@@ -42,6 +45,7 @@ void main() {
 
       client.feedRawBytes([...histFrame, ...stateFrame, ...ptyFrame]);
 
+      expect(replayStartCount, 1);
       expect(wasReplayingDuringHistory, isTrue);
       expect(client.isReplaying, isFalse);
       expect(stateEvents, ['maibot:RUNNING:2:4321']);

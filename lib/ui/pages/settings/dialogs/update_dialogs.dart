@@ -55,25 +55,7 @@ class UpdateChecker {
         '${Config.githubApi}${Config.githubReleasesPath}',
       ];
 
-      Map<String, dynamic>? releaseData;
-
-      for (final mirror in mirrors) {
-        try {
-          final response = await http.get(
-            Uri.parse(mirror),
-            headers: {'Accept': 'application/vnd.github.v3+json'},
-          ).timeout(const Duration(seconds: 10));
-
-          if (response.statusCode == 200) {
-            releaseData = jsonDecode(response.body) as Map<String, dynamic>;
-            break;
-          }
-        } catch (e) {
-          Log.w('镜像源 $mirror 请求失败: $e', tag: 'MaiBot');
-          continue;
-        }
-      }
-
+      final releaseData = await _fetchLatestReleaseFast(mirrors);
       dismissLoadingDialog(); // 关闭加载提示
 
       if (releaseData == null) {
@@ -115,6 +97,40 @@ class UpdateChecker {
         colorText: Colors.white,
       );
     }
+  }
+
+  Future<Map<String, dynamic>?> _fetchLatestReleaseFast(List<String> urls) async {
+    if (urls.isEmpty) return null;
+    final completer = Completer<Map<String, dynamic>?>();
+    int remaining = urls.length;
+
+    for (final url in urls) {
+      unawaited(() async {
+        try {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {'Accept': 'application/vnd.github.v3+json'},
+          ).timeout(const Duration(seconds: 5));
+
+          if (response.statusCode == 200) {
+            final parsed = jsonDecode(response.body);
+            if (parsed is Map<String, dynamic> && !completer.isCompleted) {
+              completer.complete(parsed);
+              return;
+            }
+          }
+        } catch (e) {
+          Log.w('镜像源 $url 请求失败: $e', tag: 'MaiBot');
+        } finally {
+          remaining--;
+          if (remaining == 0 && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        }
+      }());
+    }
+
+    return completer.future;
   }
 
   // 显示更新对话框

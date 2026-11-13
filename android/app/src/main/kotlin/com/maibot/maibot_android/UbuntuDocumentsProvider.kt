@@ -154,7 +154,7 @@ class UbuntuDocumentsProvider : DocumentsProvider() {
     override fun deleteDocument(documentId: String?) {
         if (documentId == null) throw FileNotFoundException("documentId is null")
         val file = getFileForDocId(documentId)
-        if (!file.delete()) {
+        if (!file.deleteRecursively()) {
             throw FileNotFoundException("Failed to delete document")
         }
     }

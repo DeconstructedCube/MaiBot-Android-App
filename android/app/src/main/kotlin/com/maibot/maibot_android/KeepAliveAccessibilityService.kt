@@ -24,15 +24,12 @@ class KeepAliveAccessibilityService : AccessibilityService() {
         @JvmStatic
         fun checkAndAutoStartBackend(context: Context) {
             try {
-                val sp = context.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-                val userStopped = sp.getBoolean("user_stopped", false)
-                if (userStopped) {
+                if (BackendPrefs.isUserStopped(context)) {
                     Log.i(TAG, "用户之前已显式退出应用，禁止无障碍服务自动拉起")
                     return
                 }
 
-                val autoStart = sp.getBoolean("auto_start_enabled", true)
-                if (!autoStart) {
+                if (!BackendPrefs.isAutoStartEnabled(context)) {
                     Log.i(TAG, "自启动已被用户关闭，跳过后台原生服务拉起")
                     return
                 }

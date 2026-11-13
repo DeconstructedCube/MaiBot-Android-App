@@ -119,7 +119,11 @@ class BackendProcessManager {
   }
 
   /// 启动后端服务
-  static Future<void> startService({ServiceTarget target = ServiceTarget.all}) async {
+  static Future<void> startService({
+    ServiceTarget target = ServiceTarget.all,
+    int? cols,
+    int? rows,
+  }) async {
     _userClickedStop = false;
     Log.i('启动后端服务: target=$target', tag: 'BackendProcessManager');
 
@@ -131,6 +135,9 @@ class BackendProcessManager {
         'homePath': RuntimeEnvir.homePath,
         'tmpPath': RuntimeEnvir.tmpPath,
         'ubuntuPath': scripts.ubuntuPath,
+        'uvIndexUrl': MirrorRegistry.activePypiMirror,
+        if (cols != null && cols > 0) 'cols': cols,
+        if (rows != null && rows > 0) 'rows': rows,
       });
     } catch (e) {
       Log.e('启动服务失败: $e', tag: 'BackendProcessManager');
@@ -159,7 +166,11 @@ class BackendProcessManager {
   }
 
   /// 独立重启单个或全部服务
-  static Future<void> restartService({ServiceTarget target = ServiceTarget.all}) async {
+  static Future<void> restartService({
+    ServiceTarget target = ServiceTarget.all,
+    int? cols,
+    int? rows,
+  }) async {
     _userClickedStop = false;
     Log.i('重启服务: target=$target', tag: 'BackendProcessManager');
 
@@ -171,33 +182,51 @@ class BackendProcessManager {
         'homePath': RuntimeEnvir.homePath,
         'tmpPath': RuntimeEnvir.tmpPath,
         'ubuntuPath': scripts.ubuntuPath,
+        'uvIndexUrl': MirrorRegistry.activePypiMirror,
+        if (cols != null && cols > 0) 'cols': cols,
+        if (rows != null && rows > 0) 'rows': rows,
       });
     } catch (e) {
       Log.e('重启服务失败: $e', tag: 'BackendProcessManager');
     }
   }
 
-  /// 维护操作安全事务包裹器：平滑停机 -> 执行任务 -> 按需自动恢复
+  /// 维护操作安全事务包裹器：平滑停机并等待端口/进程退场 -> 执行任务 -> 按需自动恢复
   static Future<T> runMaintenanceTransaction<T>({
     required Future<T> Function() action,
     bool autoRestart = true,
   }) async {
-    Log.i('执行维护级安全事务，正在平滑停机...', tag: 'BackendProcessManager');
-    try {
-      await _channel.invokeMethod('control_backend_service', {
-        'action': 'safe_terminate',
-        'target': 'all',
-        'binPath': RuntimeEnvir.binPath,
-        'homePath': RuntimeEnvir.homePath,
-        'tmpPath': RuntimeEnvir.tmpPath,
-        'ubuntuPath': scripts.ubuntuPath,
-      });
-    } catch (e) {
-      Log.w('通知安全停机异常: $e', tag: 'BackendProcessManager');
-    }
+    final daemonAlreadyRunning = await isDaemonRunning(
+      timeout: const Duration(milliseconds: 200),
+    );
+    if (daemonAlreadyRunning) {
+      Log.i('执行维护级安全事务，正在平滑停机...', tag: 'BackendProcessManager');
+      try {
+        await _channel.invokeMethod('control_backend_service', {
+          'action': 'safe_terminate',
+          'target': 'all',
+          'binPath': RuntimeEnvir.binPath,
+          'homePath': RuntimeEnvir.homePath,
+          'tmpPath': RuntimeEnvir.tmpPath,
+          'ubuntuPath': scripts.ubuntuPath,
+        });
+      } catch (e) {
+        Log.w('通知安全停机异常: $e', tag: 'BackendProcessManager');
+      }
 
-    // 等待短暂缓冲确保资源彻底释放
-    await Future.delayed(const Duration(milliseconds: 800));
+      // 轮询等待守护 PTY 端口关闭且状态退场（最多约 2.5s），规避固定延迟竞态
+      for (int i = 0; i < 25; i++) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        final daemonUp = await isDaemonRunning(
+          timeout: const Duration(milliseconds: 120),
+        );
+        final stateStopped = maibotState.value == ProcessState.stopped;
+        if (!daemonUp && (i >= 5 || stateStopped)) {
+          break;
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
 
     try {
       return await action();

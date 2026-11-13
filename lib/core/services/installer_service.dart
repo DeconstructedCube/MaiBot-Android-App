@@ -65,9 +65,8 @@ class InstallerService {
     final bool isExtracted = isRootfsReady();
 
     lastInstallWasFresh = !isExtracted;
-    // 核心优化：若系统已经全量就绪（非初次安装且所有核心组件完好），直接跳过冗余的网络测速与依赖检查
+    // 核心优化：若系统已经全量就绪（非初次安装且所有核心组件完好），仅轻量自愈软链与容器脚本，跳过耗时测速与依赖检查
     if (isExtracted && isEnvironmentFullyInstalled()) {
-      // 启动前确保 uv 和 pip 软链接自愈就绪
       try {
         final uvGlobal = File('${scripts.ubuntuPath}/usr/local/bin/uv');
         final uvLocal = File('${scripts.ubuntuPath}/root/.local/bin/uv');
@@ -80,6 +79,12 @@ class InstallerService {
         if (pipVenv.existsSync() && !pipGlobal.existsSync()) {
           await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/MaiBot/.venv/bin/pip', '${scripts.ubuntuPath}/usr/local/bin/pip']);
         }
+        final pythonGlobal = File('${scripts.ubuntuPath}/usr/local/bin/python');
+        final pythonVenv = File('${scripts.ubuntuPath}/root/MaiBot/.venv/bin/python');
+        if (pythonVenv.existsSync() && !pythonGlobal.existsSync()) {
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/MaiBot/.venv/bin/python', '${scripts.ubuntuPath}/usr/local/bin/python']);
+        }
+        await _syncContainerScripts();
       } catch (_) {}
       reportStage(InstallStage.completed, '准备启动服务...');
       return true;
@@ -100,26 +105,40 @@ class InstallerService {
 
         await Directory(targetPath).create(recursive: true);
 
-        // 1.1 校验或从应用 assets 释放镜像归档
+        // 1.1 校验或从应用 assets 流式释放镜像归档（优先走 Native 64KB 流式拷贝，避免 Dart 堆内存峰值）
         if (!await archiveFile.exists() || await archiveFile.length() < 1000000) {
           onLog?.call('\x1b[36m[系统]\x1b[0m 准备镜像文件 (62MB)...\r\n');
           onProgress('准备镜像文件...', 0.0);
           try {
-            final ByteData byteData = await rootBundle.load('assets/${Config.ubuntuFileName}');
-            final Uint8List picBytes = byteData.buffer.asUint8List(
-              byteData.offsetInBytes,
-              byteData.lengthInBytes,
-            );
-            await archiveFile.parent.create(recursive: true);
-            await archiveFile.writeAsBytes(picBytes, flush: true);
-            final mb = (picBytes.length / (1024 * 1024)).toStringAsFixed(1);
+            int? writtenBytes;
+            try {
+              const channel = MethodChannel(Config.methodChannel);
+              writtenBytes = await channel.invokeMethod<int>('extract_asset', {
+                'assetPath': 'assets/${Config.ubuntuFileName}',
+                'targetPath': archivePath,
+              });
+            } on MissingPluginException {
+              writtenBytes = null;
+            }
+
+            if (writtenBytes == null) {
+              final ByteData byteData = await rootBundle.load('assets/${Config.ubuntuFileName}');
+              final Uint8List picBytes = byteData.buffer.asUint8List(
+                byteData.offsetInBytes,
+                byteData.lengthInBytes,
+              );
+              await archiveFile.parent.create(recursive: true);
+              await archiveFile.writeAsBytes(picBytes, flush: true);
+              writtenBytes = picBytes.length;
+            }
+
+            final mb = (writtenBytes / (1024 * 1024)).toStringAsFixed(1);
             onLog?.call('\x1b[32m[系统]\x1b[0m 镜像已就绪 (${mb}MB)\r\n');
           } catch (e) {
             onLog?.call('\x1b[31m[错误]\x1b[0m 读取镜像文件失败: $e\r\n');
             return false;
           }
         }
-
         // 1.2 执行 tar 解压并实时流式输出日志与平滑进度
         final args = ['tar', '-xJvf', archivePath, '-C', targetPath];
         onLog?.call('\x1b[36m[解压]\x1b[0m 解压系统文件...\r\n');
@@ -302,7 +321,7 @@ class InstallerService {
     }
   }
 
-  /// 从 assets/scripts/ 部署外置脚本到容器目录并赋予可执行权限
+  /// 从 assets/scripts/ 部署或热更新外置脚本到容器目录并赋予可执行权限
   static Future<void> _deployAssetScript(
     String assetKey,
     String targetPath,
@@ -310,6 +329,12 @@ class InstallerService {
     try {
       final scriptContent = await rootBundle.loadString(assetKey);
       final targetFile = File(targetPath);
+      if (await targetFile.exists()) {
+        final currentContent = await targetFile.readAsString();
+        if (currentContent == scriptContent) return;
+      } else {
+        await targetFile.parent.create(recursive: true);
+      }
       await targetFile.writeAsString(scriptContent);
       await Process.run('${RuntimeEnvir.binPath}/busybox', ['chmod', '+x', targetPath]);
     } catch (e) {
@@ -317,6 +342,16 @@ class InstallerService {
     }
   }
 
+  static Future<void> _syncContainerScripts() async {
+    final localBinDir = Directory('${scripts.ubuntuPath}/usr/local/bin');
+    await localBinDir.create(recursive: true);
+    await Future.wait([
+      _deployAssetScript('assets/scripts/apt_fast.sh', '${localBinDir.path}/apt-fast'),
+      _deployAssetScript('assets/scripts/curl_wrapper.sh', '${localBinDir.path}/curl'),
+      _deployAssetScript('assets/scripts/wget_wrapper.sh', '${localBinDir.path}/wget'),
+      _deployAssetScript('assets/scripts/git_ops.sh', '${localBinDir.path}/maibot-git-ops'),
+    ]);
+  }
   static Future<void> _writeNetworkConfigs(Function(String)? onLog) async {
     try {
       await Directory('${scripts.ubuntuPath}/tmp').create(recursive: true);
@@ -368,12 +403,7 @@ class InstallerService {
       final localBinDir = Directory('${scripts.ubuntuPath}/usr/local/bin');
       await localBinDir.create(recursive: true);
 
-      await Future.wait([
-        _deployAssetScript('assets/scripts/apt_fast.sh', '${localBinDir.path}/apt-fast'),
-        _deployAssetScript('assets/scripts/curl_wrapper.sh', '${localBinDir.path}/curl'),
-        _deployAssetScript('assets/scripts/wget_wrapper.sh', '${localBinDir.path}/wget'),
-        _deployAssetScript('assets/scripts/git_ops.sh', '${localBinDir.path}/maibot-git-ops'),
-      ]);
+      await _syncContainerScripts();
 
       final aptGetLink = Link('${localBinDir.path}/apt-get');
       if (!await aptGetLink.exists()) {

@@ -180,29 +180,61 @@ class ProotRunner {
     try {
       if (onLog != null) {
         final process = await Process.start(prootPath, args, environment: env);
+        final stdoutDone = Completer<void>();
+        final stderrDone = Completer<void>();
 
-        process.stdout.transform(const Utf8Decoder(allowMalformed: true)).listen(
-          (data) {
-            stdoutBuffer.write(data);
-            allOutputBuffer.write(data);
-            onLog(data.toTerminalCrlf());
-          },
-          onError: (e) => Log.w('PRoot stdout read error: $e', tag: 'ProotRunner'),
-        );
+        final stdoutSub = process.stdout
+            .transform(const Utf8Decoder(allowMalformed: true))
+            .listen(
+              (data) {
+                stdoutBuffer.write(data);
+                allOutputBuffer.write(data);
+                onLog(data.toTerminalCrlf());
+              },
+              onError: (e) {
+                Log.w('PRoot stdout read error: $e', tag: 'ProotRunner');
+                if (!stdoutDone.isCompleted) stdoutDone.complete();
+              },
+              onDone: () {
+                if (!stdoutDone.isCompleted) stdoutDone.complete();
+              },
+            );
 
-        process.stderr.transform(const Utf8Decoder(allowMalformed: true)).listen(
-          (data) {
-            stderrBuffer.write(data);
-            allOutputBuffer.write(data);
-            onLog(data.toTerminalCrlf());
-          },
-          onError: (e) => Log.w('PRoot stderr read error: $e', tag: 'ProotRunner'),
-        );
+        final stderrSub = process.stderr
+            .transform(const Utf8Decoder(allowMalformed: true))
+            .listen(
+              (data) {
+                stderrBuffer.write(data);
+                allOutputBuffer.write(data);
+                onLog(data.toTerminalCrlf());
+              },
+              onError: (e) {
+                Log.w('PRoot stderr read error: $e', tag: 'ProotRunner');
+                if (!stderrDone.isCompleted) stderrDone.complete();
+              },
+              onDone: () {
+                if (!stderrDone.isCompleted) stderrDone.complete();
+              },
+            );
 
+        bool timedOut = false;
         final exitCode = await process.exitCode.timeout(timeout, onTimeout: () {
+          timedOut = true;
           process.kill(ProcessSignal.sigkill);
           return -1;
         });
+
+        if (timedOut) {
+          await stdoutSub.cancel();
+          await stderrSub.cancel();
+        } else {
+          await Future.wait([stdoutDone.future, stderrDone.future])
+              .timeout(const Duration(milliseconds: 500), onTimeout: () {
+            unawaited(stdoutSub.cancel());
+            unawaited(stderrSub.cancel());
+            return const [];
+          });
+        }
 
         return ProotExecResult(
           success: exitCode == 0,

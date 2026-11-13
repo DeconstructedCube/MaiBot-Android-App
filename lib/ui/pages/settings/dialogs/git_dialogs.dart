@@ -9,13 +9,23 @@ Future<bool> _runGitTaskWithProgressDialog({
   required String title,
   required Future<ProotExecResult> Function(Function(String) onLog) task,
 }) async {
-  final logs = <String>[].obs;
+  final logLines = <String>[].obs;
   final isDone = false.obs;
   final isSuccess = false.obs;
   final scrollController = ScrollController();
+  String pendingLine = '';
 
   void appendLog(String text) {
-    logs.add(text);
+    final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final combined = pendingLine + normalized;
+    final parts = combined.split('\n');
+    pendingLine = parts.removeLast();
+    if (parts.isNotEmpty) {
+      logLines.addAll(parts);
+      if (logLines.length > 500) {
+        logLines.removeRange(0, logLines.length - 500);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (scrollController.hasClients) {
         scrollController.jumpTo(scrollController.position.maxScrollExtent);
@@ -43,6 +53,10 @@ Future<bool> _runGitTaskWithProgressDialog({
       isSuccess.value = false;
       appendLog('\n❌ 任务发生异常: $e\n');
     } finally {
+      if (pendingLine.isNotEmpty) {
+        logLines.add(pendingLine);
+        pendingLine = '';
+      }
       isDone.value = true;
     }
   }
@@ -106,18 +120,32 @@ Future<bool> _runGitTaskWithProgressDialog({
                           ),
                         ),
                         child: Obx(
-                          () => SingleChildScrollView(
-                            controller: scrollController,
-                            child: SelectableText(
-                              logs.isEmpty ? '正在准备运行环境...' : logs.join(''),
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant,
-                                height: 1.4,
+                          () {
+                            if (logLines.isEmpty) {
+                              return Text(
+                                '正在准备运行环境...',
+                                style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                  color: colorScheme.onSurfaceVariant,
+                                  height: 1.4,
+                                ),
+                              );
+                            }
+                            return ListView.builder(
+                              controller: scrollController,
+                              itemCount: logLines.length,
+                              itemBuilder: (_, idx) => SelectableText(
+                                logLines[idx],
+                                style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                  color: colorScheme.onSurfaceVariant,
+                                  height: 1.4,
+                                ),
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -162,7 +190,7 @@ Future<bool> _runGitTaskWithProgressDialog({
     ),
     barrierDismissible: false,
   );
-
+  scrollController.dispose();
   return result ?? false;
 }
 
@@ -394,7 +422,7 @@ Future<void> showSwitchBranchDialog() async {
       },
     ),
   );
-
+  customBranchController.dispose();
   if (choice != null && choice.isNotEmpty) {
     await _runGitTaskWithProgressDialog(
       title: '切换分支: $choice',

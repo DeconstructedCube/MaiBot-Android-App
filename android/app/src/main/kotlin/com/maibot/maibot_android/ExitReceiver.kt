@@ -20,22 +20,19 @@ class ExitReceiver : BroadcastReceiver() {
         if (ACTION_EXIT == intent.action) {
             Log.i(TAG, "收到通知栏退出指令广播，执行彻底退出")
 
-            val sp = context.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-            sp.edit().putBoolean("user_stopped", true).apply()
+            BackendPrefs.setUserStopped(context, true)
 
-            // 停止 ProotService 后台常驻服务并移除通知
+            // 通知主进程关闭 UI Activity（跨进程安全）
+            val finishUiIntent = Intent(MainActivity.ACTION_FINISH_UI).apply {
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(finishUiIntent)
+
+            // 停止同属 :backend 进程的 ProotService 后台常驻服务并移除通知
             val stopIntent = Intent(context, ProotService::class.java).apply {
                 action = "STOP"
             }
             context.startService(stopIntent)
-
-            // 若 MainActivity 存活，关闭 Activity
-            val mainActivity = MainActivity.instance
-            if (mainActivity != null && !mainActivity.isFinishing) {
-                mainActivity.runOnUiThread {
-                    mainActivity.finishAffinity()
-                }
-            }
         }
     }
 }

@@ -52,6 +52,7 @@ class TerminalTab {
 class TerminalTabManager extends GetxController {
   // 所有终端标签页列表
   final RxList<TerminalTab> tabs = <TerminalTab>[].obs;
+  int _tabCounter = 1;
 
   // 当前激活的标签页索引
   final RxInt activeTabIndex = 0.obs;
@@ -61,9 +62,9 @@ class TerminalTabManager extends GetxController {
   final RxBool isAltActive = false.obs;
   final RxBool isShiftActive = false.obs;
 
-  /// 向当前活跃终端发送输入字符串（自动结合当前 CTRL / ALT / SHIFT 状态并自动复位）
-  void dispatchKeyInput(String raw) {
-    if (raw.isEmpty) return;
+  /// 应用当前 CTRL / ALT / SHIFT 状态到输入序列并返回最终转义字符串（纯逻辑，便于测试）
+  String transformKeyInput(String raw) {
+    if (raw.isEmpty) return raw;
     String processed = raw;
 
     if (isShiftActive.value) {
@@ -72,7 +73,12 @@ class TerminalTabManager extends GetxController {
     }
 
     if (isCtrlActive.value) {
-      if (processed.length == 1) {
+      if (processed == '\x1b[A' ||
+          processed == '\x1b[B' ||
+          processed == '\x1b[C' ||
+          processed == '\x1b[D') {
+        processed = '\x1b[1;5${processed.substring(2)}';
+      } else if (processed.length == 1) {
         final code = processed.toUpperCase().codeUnitAt(0);
         if (code >= 64 && code <= 95) {
           processed = String.fromCharCode(code - 64);
@@ -84,10 +90,24 @@ class TerminalTabManager extends GetxController {
     }
 
     if (isAltActive.value) {
-      processed = '\x1b$processed';
+      if (processed == '\x1b[A' ||
+          processed == '\x1b[B' ||
+          processed == '\x1b[C' ||
+          processed == '\x1b[D') {
+        processed = '\x1b[1;3${processed.substring(2)}';
+      } else {
+        processed = '\x1b$processed';
+      }
       isAltActive.value = false;
     }
 
+    return processed;
+  }
+
+  /// 向当前活跃终端发送输入字符串（自动结合当前 CTRL / ALT / SHIFT 状态并自动复位）
+  void dispatchKeyInput(String raw) {
+    if (raw.isEmpty) return;
+    final processed = transformKeyInput(raw);
     final tab = activeTab;
     if (tab != null && tab.process != null) {
       try {
@@ -168,7 +188,8 @@ class TerminalTabManager extends GetxController {
   /// 创建新的系统交互终端
   Future<void> createNewSystemTab() async {
     final newId = 'system_${DateTime.now().millisecondsSinceEpoch}';
-    final newTitle = '终端 ${tabs.length + 1}';
+    _tabCounter++;
+    final newTitle = '终端 $_tabCounter';
     final newTerminal = Terminal(maxLines: 5000);
     final prootPath = '${RuntimeEnvir.binPath}/proot';
     final args = ProotRunner.buildProotArgs(isInteractive: true);
@@ -185,17 +206,29 @@ class TerminalTabManager extends GetxController {
         }
       };
 
-      // 动态同步终端窗口大小，彻底杜绝换行覆盖当前行
+      int lastCols = 0;
+      Timer? resizeDebounce;
+      bool initialSized = false;
+      // 仅在列宽实质变化（如横竖屏切换）时同步 stty，避免软键盘升降导致行高变化污染交互编辑器/命令行
       newTerminal.onResize = (width, height, pixelWidth, pixelHeight) {
-        try {
-          process.stdin.add(utf8.encode('stty cols $width rows $height 2>/dev/null\n'));
-        } catch (_) {}
+        if (!initialSized || width == lastCols || width <= 0 || height <= 0) {
+          return;
+        }
+        lastCols = width;
+        resizeDebounce?.cancel();
+        resizeDebounce = Timer(const Duration(milliseconds: 350), () {
+          try {
+            process.stdin.add(utf8.encode('stty cols $width rows $height 2>/dev/null\n'));
+          } catch (_) {}
+        });
       };
 
-      Future.delayed(const Duration(milliseconds: 200), () {
+      Future.delayed(const Duration(milliseconds: 220), () {
         try {
           final cols = newTerminal.viewWidth > 0 ? newTerminal.viewWidth : 80;
           final rows = newTerminal.viewHeight > 0 ? newTerminal.viewHeight : 24;
+          lastCols = cols;
+          initialSized = true;
           process.stdin.add(utf8.encode('stty cols $cols rows $rows 2>/dev/null; clear\n'));
         } catch (_) {}
       });
@@ -212,6 +245,7 @@ class TerminalTabManager extends GetxController {
       });
 
       process.exitCode.then((code) {
+        resizeDebounce?.cancel();
         Log.d('System tab process exited with code $code', tag: 'TerminalTabManager');
         newTerminal.write('\r\n\x1b[33m[终端会话已退出: $code]\x1b[0m\r\n');
       });

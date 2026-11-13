@@ -28,6 +28,7 @@ class SocketStreamClient {
     this.onData,
     this.onLine,
     this.onStateFrame,
+    this.onHistoryReplayStart,
   }) {
     _initUtf8StreamDecoder();
   }
@@ -44,6 +45,9 @@ class SocketStreamClient {
   /// 可选的状态变更回调（默认自动同步至 [BackendProcessManager.updateServiceState]）
   final void Function(String service, String state, int retry, int pid)? onStateFrame;
 
+  /// 收到服务端历史缓冲区回放帧前的回调（用于清理终端旧内容避免重复堆叠）
+  final void Function()? onHistoryReplayStart;
+
   Socket? _socket;
   final List<int> _rawBuffer = <int>[];
   late ByteConversionSink _ptyUtf8Sink;
@@ -52,9 +56,10 @@ class SocketStreamClient {
   bool _replaying = false;
   bool _disposed = false;
   bool _isConnecting = false;
+  bool _reconnectPaused = false;
+  int _reconnectAttempt = 0;
   Timer? _reconnectTimer;
   StreamSubscription<Uint8List>? _subscription;
-
   /// 当前是否处于历史缓冲区回放阶段
   bool get isReplaying => _replaying;
 
@@ -100,6 +105,7 @@ class SocketStreamClient {
         _socket = null;
         return;
       }
+      _reconnectAttempt = 0;
       _subscription = _socket!.listen(
         feedRawBytes,
         onDone: _handleDisconnect,
@@ -155,6 +161,13 @@ class SocketStreamClient {
         _ptyUtf8Sink.add(payload);
         break;
       case frameHistoryData:
+        _lineBuffer = '';
+        _lastCharWasCr = false;
+        try {
+          _ptyUtf8Sink.close();
+        } catch (_) {}
+        _initUtf8StreamDecoder();
+        onHistoryReplayStart?.call();
         _replaying = true;
         _ptyUtf8Sink.add(payload);
         _replaying = false;
@@ -210,10 +223,32 @@ class SocketStreamClient {
     _scheduleReconnect();
   }
 
-  void _scheduleReconnect() {
-    if (_disposed) return;
+  /// 暂停自动重连（应用退至后台时节省电量与无效重试）
+  void pauseReconnect() {
+    _reconnectPaused = true;
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 2), connect);
+    _reconnectTimer = null;
+  }
+
+  /// 恢复自动重连（应用回到前台时立即尝试重连）
+  void resumeReconnect() {
+    _reconnectPaused = false;
+    if (!_disposed && !isConnected) {
+      connect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || _reconnectPaused) return;
+    _reconnectTimer?.cancel();
+    final delayMs = switch (_reconnectAttempt) {
+      0 => 250,
+      1 => 500,
+      2 => 1000,
+      _ => 2000,
+    };
+    _reconnectAttempt++;
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), connect);
   }
 
   String _normalizeNewlines(String chunk) {

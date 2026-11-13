@@ -34,6 +34,48 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * 跨进程一致的轻量标志位存储（基于 filesDir 标志文件，规避 SharedPreferences 跨进程内存缓存脑裂）
+ */
+object BackendPrefs {
+    private fun flagDir(context: Context): File = File(context.filesDir, ".backend_prefs").apply {
+        if (!exists()) mkdirs()
+    }
+
+    fun isUserStopped(context: Context): Boolean = File(flagDir(context), "user_stopped.flag").exists()
+
+    fun setUserStopped(context: Context, stopped: Boolean) {
+        val file = File(flagDir(context), "user_stopped.flag")
+        if (stopped) {
+            if (!file.exists()) try { file.createNewFile() } catch (_: Exception) {}
+        } else {
+            if (file.exists()) try { file.delete() } catch (_: Exception) {}
+        }
+    }
+
+    fun isAutoStartEnabled(context: Context): Boolean = !File(flagDir(context), "auto_start_disabled.flag").exists()
+
+    fun setAutoStartEnabled(context: Context, enabled: Boolean) {
+        val file = File(flagDir(context), "auto_start_disabled.flag")
+        if (!enabled) {
+            if (!file.exists()) try { file.createNewFile() } catch (_: Exception) {}
+        } else {
+            if (file.exists()) try { file.delete() } catch (_: Exception) {}
+        }
+    }
+
+    fun isWifiLockEnabled(context: Context): Boolean = !File(flagDir(context), "wifi_lock_disabled.flag").exists()
+
+    fun setWifiLockEnabled(context: Context, enabled: Boolean) {
+        val file = File(flagDir(context), "wifi_lock_disabled.flag")
+        if (!enabled) {
+            if (!file.exists()) try { file.createNewFile() } catch (_: Exception) {}
+        } else {
+            if (file.exists()) try { file.delete() } catch (_: Exception) {}
+        }
+    }
+}
+
 enum class ServiceState(val value: String) {
     STOPPED("STOPPED"),
     STARTING("STARTING"),
@@ -138,8 +180,7 @@ class ProotService : Service() {
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MaiBot::BackendLock").apply {
             acquire()
         }
-        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-        updateWifiLock(sp.getBoolean("wifi_lock_enabled", true))
+        updateWifiLock(BackendPrefs.isWifiLockEnabled(this))
         serviceScope.launch {
             for (cmd in commandChannel) {
                 try {
@@ -219,17 +260,17 @@ class ProotService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
         val action = intent?.action
-        val userStopped = sp.getBoolean("user_stopped", false)
+        val userStopped = BackendPrefs.isUserStopped(this)
 
         if ("SET_WIFI_LOCK" == action) {
             val enabled = intent.getBooleanExtra("enabled", true)
-            sp.edit().putBoolean("wifi_lock_enabled", enabled).apply()
+            BackendPrefs.setWifiLockEnabled(this, enabled)
             updateWifiLock(enabled)
             return START_NOT_STICKY
         }
         if ("SET_AUTO_START" == action) {
             val enabled = intent.getBooleanExtra("enabled", true)
-            sp.edit().putBoolean("auto_start_enabled", enabled).apply()
+            BackendPrefs.setAutoStartEnabled(this, enabled)
             return START_NOT_STICKY
         }
 
@@ -238,7 +279,7 @@ class ProotService : Service() {
                 ("CONTROL".equals(action, ignoreCase = true) && "STOP".equals(intent?.getStringExtra("action"), ignoreCase = true))
         if (isStopAction) {
             Log.i(TAG, "收到明确停机指令 (action=$action)，立即终止后台所有进程并撤回前台通知")
-            sp.edit().putBoolean("user_stopped", true).apply()
+            BackendPrefs.setUserStopped(this, true)
             val binPath = intent?.getStringExtra("binPath") ?: sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
 
             serviceScope.launch {
@@ -261,17 +302,22 @@ class ProotService : Service() {
             var homePath = intent.getStringExtra("homePath")
             var tmpPath = intent.getStringExtra("tmpPath")
             var ubuntuPath = intent.getStringExtra("ubuntuPath")
+            val uvIndexUrl = intent.getStringExtra("uvIndexUrl")
+            val cols = intent.getIntExtra("cols", 0).takeIf { it in 40..200 }
+            val rows = intent.getIntExtra("rows", 0).takeIf { it in 16..100 }
 
             if (binPath != null && homePath != null) {
-                sp.edit()
-                    .putString("binPath", binPath)
-                    .putString("homePath", homePath)
-                    .putString("tmpPath", tmpPath)
-                    .putString("ubuntuPath", ubuntuPath)
-                    .apply()
+                sp.edit().apply {
+                    putString("binPath", binPath)
+                    putString("homePath", homePath)
+                    putString("tmpPath", tmpPath)
+                    putString("ubuntuPath", ubuntuPath)
+                    if (!uvIndexUrl.isNullOrBlank()) putString("uvIndexUrl", uvIndexUrl)
+                    if (cols != null) putInt("cols", cols)
+                    if (rows != null) putInt("rows", rows)
+                }.apply()
             } else {
-                val autoStart = sp.getBoolean("auto_start_enabled", true)
-                if (!autoStart && action == null) {
+                if (!BackendPrefs.isAutoStartEnabled(this) && action == null) {
                     Log.i(TAG, "自启动已被用户关闭，ProotService 保持待命状态")
                     return START_NOT_STICKY
                 }
@@ -286,13 +332,18 @@ class ProotService : Service() {
             val curHome = homePath ?: "${filesDir.absolutePath}/home"
             val curTmp = tmpPath ?: "${filesDir.absolutePath}/usr/tmp"
             val curUbuntu = ubuntuPath ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+            val curUvIndex = uvIndexUrl?.takeIf { it.isNotBlank() }
+                ?: sp.getString("uvIndexUrl", null)
+                ?: "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+            val curCols = cols ?: sp.getInt("cols", 60).coerceIn(40, 200)
+            val curRows = rows ?: sp.getInt("rows", 28).coerceIn(16, 100)
             val ctrlAction = intent.getStringExtra("action")?.uppercase() ?: "START"
             val ctrlTarget = intent.getStringExtra("target")?.uppercase() ?: "ALL"
 
             ensureForegroundNotification()
 
             commandChannel.trySend {
-                handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu)
+                handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
             }
         }
         return START_NOT_STICKY
@@ -305,24 +356,18 @@ class ProotService : Service() {
         curBin: String,
         curHome: String,
         curTmp: String,
-        curUbuntu: String
+        curUbuntu: String,
+        curUvIndex: String,
+        curCols: Int,
+        curRows: Int
     ) {
-        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-
-        if ("STOP" == action) {
-            sp.edit().putBoolean("user_stopped", true).apply()
-            safelyTerminateAllProcesses(curBin)
-            stopForegroundAndSelf()
-            return
-        }
-
         if ("CONTROL" == action) {
             Log.i(TAG, "收到控制指令: action=$ctrlAction, target=$ctrlTarget")
             when (ctrlAction) {
                 "START" -> {
-                    sp.edit().putBoolean("user_stopped", false).apply()
+                    BackendPrefs.setUserStopped(this, false)
                     if (ctrlTarget == "ALL" || ctrlTarget == "MAIBOT") {
-                        startMaiBot(curBin, curHome, curTmp, curUbuntu)
+                        startMaiBot(curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
                     }
                 }
                 "STOP" -> {
@@ -330,15 +375,15 @@ class ProotService : Service() {
                         maibotProcess?.stop()
                         killTargetProcesses(curBin, arrayOf("python", "python3"))
                     } else if (ctrlTarget == "ALL") {
-                        sp.edit().putBoolean("user_stopped", true).apply()
+                        BackendPrefs.setUserStopped(this, true)
                         safelyTerminateAllProcesses(curBin)
                         stopForegroundAndSelf()
                     }
                 }
                 "RESTART" -> {
-                    sp.edit().putBoolean("user_stopped", false).apply()
+                    BackendPrefs.setUserStopped(this, false)
                     if (ctrlTarget == "MAIBOT" || ctrlTarget == "ALL") {
-                        startMaiBot(curBin, curHome, curTmp, curUbuntu, forceRestart = true)
+                        startMaiBot(curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows, forceRestart = true)
                     }
                 }
                 "SAFE_TERMINATE" -> {
@@ -354,7 +399,7 @@ class ProotService : Service() {
             return
         }
 
-        startMaiBot(curBin, curHome, curTmp, curUbuntu)
+        startMaiBot(curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
     }
 
     private fun stopForegroundAndSelf() {
@@ -368,7 +413,16 @@ class ProotService : Service() {
         stopSelf()
     }
 
-    private suspend fun startMaiBot(binPath: String, homePath: String, tmpPath: String, ubuntuPath: String, forceRestart: Boolean = false) {
+    private suspend fun startMaiBot(
+        binPath: String,
+        homePath: String,
+        tmpPath: String,
+        ubuntuPath: String,
+        uvIndexUrl: String,
+        cols: Int,
+        rows: Int,
+        forceRestart: Boolean = false
+    ) {
         if (!forceRestart && maibotProcess?.isAlive() == true) {
             Log.d(TAG, "MaiBot 进程已在运行，跳过启动")
             return
@@ -380,7 +434,7 @@ class ProotService : Service() {
             delay(350)
         }
 
-        Log.i(TAG, "启动 MaiBot 服务进程...")
+        Log.i(TAG, "启动 MaiBot 服务进程 (cols=$cols, rows=$rows)...")
         val maibotCmd = """
             export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             export TERM=xterm-256color
@@ -396,10 +450,10 @@ class ProotService : Service() {
             export UV_COLOR=always
             export UV_PROGRESS_MODE=visual
             export UV_NO_PROGRESS=0
-            export UV_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+            export UV_INDEX_URL='$uvIndexUrl'
             export PIP_NO_COLOR=0
-            export COLUMNS=45
-            export LINES=24
+            export COLUMNS=$cols
+            export LINES=$rows
             export LANG=C.UTF-8
             export LC_ALL=C.UTF-8
             export UV_LINK_MODE=copy
@@ -412,13 +466,13 @@ class ProotService : Service() {
             if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); md5sum EULA.md | awk '{printf "%s", $1}' > eula.confirmed; fi
             if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); md5sum PRIVACY.md | awk '{printf "%s", $1}' > privacy.confirmed; fi
             if command -v script >/dev/null 2>&1; then
-                exec script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv run --color always bot.py" /dev/null
+                exec script -q -e -c "stty cols $cols rows $rows 2>/dev/null; /root/.local/bin/uv run --color always bot.py" /dev/null
             else
                 exec /root/.local/bin/uv run --color always bot.py
             fi
         """.trimIndent() + "\n"
 
-        maibotProcess = ProotProcess("MaiBot", 20001, binPath, homePath, tmpPath, ubuntuPath, maibotCmd).apply {
+        maibotProcess = ProotProcess("MaiBot", 20001, binPath, homePath, tmpPath, ubuntuPath, maibotCmd, uvIndexUrl, cols, rows).apply {
             start()
         }
     }
@@ -543,7 +597,10 @@ class ProotService : Service() {
         private val homePath: String,
         private val tmpPath: String,
         private val ubuntuPath: String,
-        private val command: String
+        private val command: String,
+        private val uvIndexUrl: String,
+        private val cols: Int,
+        private val rows: Int
     ) {
         private var process: Process? = null
         private var serverSocket: ServerSocket? = null
@@ -743,10 +800,10 @@ class ProotService : Service() {
                         put("UV_COLOR", "always")
                         put("UV_PROGRESS_MODE", "visual")
                         put("UV_NO_PROGRESS", "0")
-                        put("UV_INDEX_URL", "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple")
+                        put("UV_INDEX_URL", uvIndexUrl)
                         put("PIP_NO_COLOR", "0")
-                        put("COLUMNS", "45")
-                        put("LINES", "24")
+                        put("COLUMNS", cols.toString())
+                        put("LINES", rows.toString())
                         put("LANG", "C.UTF-8")
                         put("LC_ALL", "C.UTF-8")
                         put("MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED", "1")

@@ -16,7 +16,7 @@ Future<void> showBackupRestoreDialog({
     await BackupService.ensureStoragePermission();
   }
 
-  final backups = await BackupService.getAvailableBackupsAsync();
+  final backups = await BackupService.getAvailableBackupEntriesAsync();
   if (backups.isEmpty) {
     if (!isInitialInstall) {
       Get.snackbar(
@@ -41,7 +41,7 @@ Future<void> showBackupRestoreDialog({
       builder: (context, setState) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
-        final currentFile = backups[selectedBackupIndex];
+        final currentFile = backups[selectedBackupIndex].file;
         return PopScope(
           canPop: !isRestoring,
           child: AlertDialog(
@@ -127,14 +127,15 @@ Future<void> showBackupRestoreDialog({
                                   .withValues(alpha: 0.3),
                             ),
                             itemBuilder: (context, idx) {
-                              final f = backups[idx];
+                              final entry = backups[idx];
+                              final f = entry.file;
                               final isSelected = idx == selectedBackupIndex;
                               final isLatest = idx == 0;
-                              final fStat = f.statSync();
+                              final modified = entry.modified;
                               final fDate =
-                                  '${fStat.modified.month.toString().padLeft(2, '0')}-${fStat.modified.day.toString().padLeft(2, '0')} ${fStat.modified.hour.toString().padLeft(2, '0')}:${fStat.modified.minute.toString().padLeft(2, '0')}';
+                                  '${modified.month.toString().padLeft(2, '0')}-${modified.day.toString().padLeft(2, '0')} ${modified.hour.toString().padLeft(2, '0')}:${modified.minute.toString().padLeft(2, '0')}';
                               final fMB =
-                                  (fStat.size / 1024 / 1024).toStringAsFixed(1);
+                                  (entry.sizeBytes / 1024 / 1024).toStringAsFixed(1);
 
                               return ListTile(
                                 dense: true,
@@ -334,10 +335,9 @@ Future<void> showBackupRestoreDialog({
                           restoreData: restoreData,
                           restoreConfig: restoreConfig,
                           restorePlugins: restorePlugins,
-                          restartService: isInitialInstall,
+                          restartService: false,
                           showSnackbar: false,
                         );
-                        if (context.mounted) {
                           Navigator.of(context).pop();
                         } else if (Get.isDialogOpen == true) {
                           Get.back(canPop: false);

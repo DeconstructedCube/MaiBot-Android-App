@@ -72,8 +72,11 @@ class _TerminalTabViewState extends State<TerminalTabView> {
             ),
           ),
 
-          // Termux 同款快捷按键底边栏（ESC, TAB, CTRL, ALT, 方向键等）
-          TerminalExtraKeysBar(manager: manager),
+          // 仅在交互式系统终端标签页显示快捷按键底边栏
+          if (activeIndex >= 0 &&
+              activeIndex < tabs.length &&
+              tabs[activeIndex].type == TerminalTabType.system)
+            TerminalExtraKeysBar(manager: manager),
         ],
       );
     });

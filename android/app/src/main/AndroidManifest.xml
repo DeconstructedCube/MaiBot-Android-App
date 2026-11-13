@@ -97,6 +97,7 @@
         <!-- 前台通知栏退出广播接收器 -->
         <receiver
             android:name=".ExitReceiver"
+            android:process=":backend"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.maibot.maibot_android.ACTION_EXIT" />

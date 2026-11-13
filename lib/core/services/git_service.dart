@@ -17,13 +17,17 @@ class GitService {
     return gitDir.existsSync();
   }
 
-  /// 确保外置的 git_ops.sh 脚本已部署到容器内 /usr/local/bin/maibot-git-ops
+  /// 确保外置的 git_ops.sh 脚本已部署且与随包版本同步到容器内 /usr/local/bin/maibot-git-ops
   static Future<void> _ensureGitOpsScriptDeployed() async {
     final hostScriptFile = File('${scripts.ubuntuPath}$_gitOpsBin');
-    if (await hostScriptFile.exists()) return;
     try {
       final content = await rootBundle.loadString('assets/scripts/git_ops.sh');
-      await hostScriptFile.parent.create(recursive: true);
+      if (await hostScriptFile.exists()) {
+        final existing = await hostScriptFile.readAsString();
+        if (existing == content) return;
+      } else {
+        await hostScriptFile.parent.create(recursive: true);
+      }
       await hostScriptFile.writeAsString(content);
     } catch (_) {}
   }

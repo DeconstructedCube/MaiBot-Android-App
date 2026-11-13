@@ -118,6 +118,7 @@ class MaintenanceActions {
       );
 
       Future.delayed(const Duration(seconds: 2), () async {
+        await BackendProcessManager.stopService();
         await SystemNavigator.pop();
       });
     } catch (e) {
@@ -183,6 +184,7 @@ class MaintenanceActions {
       );
 
       Future.delayed(const Duration(seconds: 2), () async {
+        await BackendProcessManager.stopService();
         await SystemNavigator.pop();
       });
     } catch (e) {
@@ -250,8 +252,11 @@ class MaintenanceActions {
     }
     await Future.delayed(const Duration(milliseconds: 200));
     try {
-      const MethodChannel('maibot_channel').invokeMethod('exit_app');
+      await const MethodChannel('maibot_channel').invokeMethod('exit_app');
     } catch (_) {
+      if (Get.isDialogOpen == true) {
+        Get.back(canPop: false);
+      }
       await SystemNavigator.pop();
     }
   }

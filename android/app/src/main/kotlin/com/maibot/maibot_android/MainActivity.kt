@@ -1,21 +1,29 @@
 package com.maibot.maibot_android
 
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
+import io.flutter.FlutterInjector
 import io.flutter.embedding.android.FlutterFragment
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 @Suppress("DEPRECATION")
 class MainActivity : FragmentActivity() {
@@ -27,19 +35,32 @@ class MainActivity : FragmentActivity() {
 
         private const val TAG_FLUTTER_FRAGMENT = "flutter_fragment"
         private const val ENGINE_ID = "my_engine_id"
+        const val ACTION_FINISH_UI = "com.maibot.maibot_android.ACTION_FINISH_UI"
     }
 
     private var flutterFragment: FlutterFragment? = null
     private lateinit var mContext: Context
     private lateinit var fragmentManager: FragmentManager
-
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val finishUiReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (ACTION_FINISH_UI == intent?.action && !isFinishing) {
+                finishAffinity()
+            }
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         instance = this
         mContext = this
 
         // 用户主动启动应用，重置显式停止标志
-        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-        sp.edit().putBoolean("user_stopped", false).apply()
+        BackendPrefs.setUserStopped(this, false)
+        val filter = IntentFilter(ACTION_FINISH_UI)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(finishUiReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(finishUiReceiver, filter)
+        }
         // 在 super.onCreate 之前确保 FlutterEngine 已放入 Cache 中，
         // 防止在 Activity 重建（如被 OOMKiller 回收后重新进入）时
         // FragmentManager 自动恢复 FlutterFragment 抛出 IllegalStateException
@@ -99,12 +120,14 @@ class MainActivity : FragmentActivity() {
                     val homePath = call.argument<String>("homePath")
                     val tmpPath = call.argument<String>("tmpPath")
                     val ubuntuPath = call.argument<String>("ubuntuPath")
+                    val uvIndexUrl = call.argument<String>("uvIndexUrl")
+                    val cols = call.argument<Int>("cols")
+                    val rows = call.argument<Int>("rows")
 
-                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
                     if (action.equals("stop", ignoreCase = true) && target.equals("all", ignoreCase = true)) {
-                        sp.edit().putBoolean("user_stopped", true).apply()
+                        BackendPrefs.setUserStopped(mContext, true)
                     } else if (action.equals("start", ignoreCase = true) || action.equals("restart", ignoreCase = true)) {
-                        sp.edit().putBoolean("user_stopped", false).apply()
+                        BackendPrefs.setUserStopped(mContext, false)
                     }
 
                     val intent = Intent(mContext, ProotService::class.java).apply {
@@ -119,6 +142,9 @@ class MainActivity : FragmentActivity() {
                         putExtra("homePath", homePath)
                         putExtra("tmpPath", tmpPath)
                         putExtra("ubuntuPath", ubuntuPath)
+                        if (!uvIndexUrl.isNullOrBlank()) putExtra("uvIndexUrl", uvIndexUrl)
+                        if (cols != null && cols > 0) putExtra("cols", cols)
+                        if (rows != null && rows > 0) putExtra("rows", rows)
                     }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -127,6 +153,45 @@ class MainActivity : FragmentActivity() {
                         mContext.startService(intent)
                     }
                     result.success(true)
+                }
+                "extract_asset" -> {
+                    val assetPath = call.argument<String>("assetPath")
+                    val targetPath = call.argument<String>("targetPath")
+                    if (assetPath.isNullOrEmpty() || targetPath.isNullOrEmpty()) {
+                        result.error("INVALID_ARGS", "assetPath and targetPath are required", null)
+                    } else {
+                        ioExecutor.execute {
+                            try {
+                                val lookupKey = FlutterInjector.instance().flutterLoader().getLookupKeyForAsset(assetPath)
+                                val targetFile = File(targetPath)
+                                targetFile.parentFile?.mkdirs()
+                                val tempFile = File(targetFile.parentFile, "${targetFile.name}.part")
+                                var totalBytes = 0L
+                                mContext.assets.open(lookupKey).use { input ->
+                                    FileOutputStream(tempFile).use { output ->
+                                        val buffer = ByteArray(65536)
+                                        var read: Int
+                                        while (input.read(buffer).also { read = it } != -1) {
+                                            output.write(buffer, 0, read)
+                                            totalBytes += read
+                                        }
+                                        output.flush()
+                                    }
+                                }
+                                if (targetFile.exists()) targetFile.delete()
+                                if (!tempFile.renameTo(targetFile)) {
+                                    throw java.io.IOException("Failed to rename temp asset file to $targetPath")
+                                }
+                                Handler(Looper.getMainLooper()).post {
+                                    result.success(totalBytes)
+                                }
+                            } catch (e: Exception) {
+                                Handler(Looper.getMainLooper()).post {
+                                    result.error("EXTRACT_FAILED", e.message, null)
+                                }
+                            }
+                        }
+                    }
                 }
                 "is_accessibility_enabled" -> {
                     result.success(isAccessibilityServiceEnabled())
@@ -143,13 +208,11 @@ class MainActivity : FragmentActivity() {
                     }
                 }
                 "is_auto_start_enabled" -> {
-                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-                    result.success(sp.getBoolean("auto_start_enabled", true))
+                    result.success(BackendPrefs.isAutoStartEnabled(mContext))
                 }
                 "set_auto_start_enabled" -> {
                     val enabled = call.argument<Boolean>("enabled") == true
-                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-                    sp.edit().putBoolean("auto_start_enabled", enabled).apply()
+                    BackendPrefs.setAutoStartEnabled(mContext, enabled)
                     val intent = Intent(mContext, ProotService::class.java).apply {
                         this.action = "SET_AUTO_START"
                         putExtra("enabled", enabled)
@@ -161,8 +224,7 @@ class MainActivity : FragmentActivity() {
                 }
                 "set_wifi_lock_enabled" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: true
-                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-                    sp.edit().putBoolean("wifi_lock_enabled", enabled).apply()
+                    BackendPrefs.setWifiLockEnabled(mContext, enabled)
                     val intent = Intent(mContext, ProotService::class.java).apply {
                         this.action = "SET_WIFI_LOCK"
                         putExtra("enabled", enabled)
@@ -173,8 +235,7 @@ class MainActivity : FragmentActivity() {
                     result.success(true)
                 }
                 "exit_app" -> {
-                    val sp = mContext.getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-                    sp.edit().putBoolean("user_stopped", true).apply()
+                    BackendPrefs.setUserStopped(mContext, true)
                     val stopIntent = Intent(mContext, ProotService::class.java).apply {
                         action = "STOP"
                     }
@@ -183,7 +244,7 @@ class MainActivity : FragmentActivity() {
                     } catch (_: Exception) {}
                     result.success(true)
                     finishAffinity()
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    Handler(Looper.getMainLooper()).postDelayed({
                         android.os.Process.killProcess(android.os.Process.myPid())
                     }, 250)
                 }
@@ -280,6 +341,10 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(finishUiReceiver)
+        } catch (_: Exception) {}
+        ioExecutor.shutdownNow()
         if (instance === this) {
             instance = null
         }

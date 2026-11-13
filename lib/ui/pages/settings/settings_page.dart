@@ -49,6 +49,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (_appVersion.isEmpty) {
       _loadAppVersion();
     }
+    unawaited(homeController.reloadTokensFromDisk());
   }
 
   Future<void> _loadAppVersion() async {
@@ -194,7 +195,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     onTap: () {
                       widget.maiBotController.loadRequest(
-                        Uri.parse('http://127.0.0.1:${Ports.maibotWeb}'),
+                        Uri.parse('http://127.0.0.1:${homeController.activeWebPort.value}'),
                       );
                       widget.onNavigate(0);
                       Get.snackbar(

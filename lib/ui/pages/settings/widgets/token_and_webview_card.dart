@@ -86,7 +86,7 @@ class TokenAndWebviewCard extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        hasToken ? tokenDisplay : '暂未捕获到 Token',
+        hasToken ? tokenDisplay : '未检测到 Token（读取自 data/webui.json）',
         style: TextStyle(
           fontSize: 12,
           color: hasToken
@@ -95,8 +95,32 @@ class TokenAndWebviewCard extends StatelessWidget {
           fontFamily: hasToken ? 'monospace' : null,
         ),
       ),
-      trailing: hasToken
-          ? OutlinedButton.icon(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              Icons.refresh_rounded,
+              size: 18,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            tooltip: '从 data/webui.json 重新读取',
+            onPressed: () {
+              unawaited(() async {
+                final ok = await homeController.reloadTokensFromDisk();
+                Get.snackbar(
+                  ok ? '已刷新' : '未读取到 Token',
+                  ok
+                      ? '已从 data/webui.json 更新密钥'
+                      : '尚未生成或未找到 data/webui.json 中的 access_token',
+                  snackPosition: SnackPosition.BOTTOM,
+                  duration: const Duration(seconds: 2),
+                );
+              }());
+            },
+          ),
+          if (hasToken)
+            OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -108,9 +132,10 @@ class TokenAndWebviewCard extends StatelessWidget {
               icon: const Icon(Icons.copy_rounded, size: 14),
               label: const Text('复制', style: TextStyle(fontSize: 12)),
               onPressed: () => _copyToken(title, token),
-            )
-          : null,
-      onTap: hasToken ? () => _copyToken(title, token) : null,
+            ),
+        ],
+      ),
+      onTap: hasToken ? () => _copyToken(title, token) : () => unawaited(homeController.reloadTokensFromDisk()),
     );
   }
 
