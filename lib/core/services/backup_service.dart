@@ -96,7 +96,7 @@ class BackupService {
     }
   }
 
-  /// 探测备份文件内部包含的具体模块（兼容传统根目录布局与 MaiBot 1.4.x host/ + bots/<id>/ 多实例布局）
+  /// 探测备份文件内部包含的具体模块（兼容传统根目录布局与 MaiBot 1.4.x `host/` + `bots/<id>/` 多实例布局）
   static Future<Map<String, bool>> inspectBackupContents(File backupFile) async {
     final result = {
       'data': false,
