@@ -11,6 +11,7 @@ import '../../controllers/home_controller.dart';
 import '../../controllers/theme_controller.dart';
 import '../../../core/constants/scripts.dart' as scripts;
 import '../../../core/config/app_config.dart';
+import '../../../core/services/backend_process_manager.dart';
 import '../../../core/services/backup_service.dart';
 import '../../../core/utils/version_utils.dart';
 import 'dialogs/update_dialogs.dart';
@@ -18,6 +19,7 @@ import 'dialogs/git_clone_dialog.dart';
 import 'dialogs/git_dialogs.dart';
 import 'keep_alive_settings_page.dart';
 import 'maintenance_actions.dart';
+import 'widgets/resource_monitor_card.dart';
 import 'widgets/settings_header_card.dart';
 import 'widgets/theme_settings_card.dart';
 import 'widgets/token_and_webview_card.dart';
@@ -178,6 +180,8 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                const ResourceMonitorCard(),
+                const SizedBox(height: 16),
                 _buildSectionHeader('界面与主题', Icons.palette_rounded),
                 ThemeSettingsCard(controller: themeController),
                 const SizedBox(height: 16),
@@ -204,6 +208,37 @@ class _SettingsPageState extends State<SettingsPage> {
                         snackPosition: SnackPosition.BOTTOM,
                         duration: const Duration(seconds: 2),
                       );
+                    },
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _buildSettingTile(
+                    icon: Icons.restart_alt_rounded,
+                    iconColor: Colors.green.shade700,
+                    title: '重启 MaiBot',
+                    subtitle: '重启后台 MaiBot 服务进程',
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    onTap: () {
+                      unawaited(() async {
+                        await BackendProcessManager.restartService(
+                          target: ServiceTarget.maibot,
+                          cols: homeController.terminal.viewWidth > 0
+                              ? homeController.terminal.viewWidth
+                              : 60,
+                          rows: homeController.terminal.viewHeight > 0
+                              ? homeController.terminal.viewHeight
+                              : 28,
+                        );
+                        Get.snackbar(
+                          '已发送重启指令',
+                          '正在重启 MaiBot 后台服务',
+                          snackPosition: SnackPosition.BOTTOM,
+                          duration: const Duration(seconds: 2),
+                        );
+                      }());
                     },
                   ),
                   const Divider(height: 1, indent: 56),

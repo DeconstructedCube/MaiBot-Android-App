@@ -33,7 +33,143 @@ class ThemeSettingsCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.color_lens_rounded,
+                    color: colorScheme.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Text(
+                  '主题色调',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                Obx(
+                  () => Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: controller.currentSeedColor
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      controller.currentSeedName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: controller.currentSeedColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Obx(() {
+            final selectedIndex = controller.selectedColorIndex.value;
+            final isDynamicSel = controller.isDynamicSelected;
+            return SizedBox(
+              height: 58,
+              child: ShaderMask(
+                shaderCallback: (Rect bounds) {
+                  return const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black,
+                      Colors.black,
+                      Colors.transparent,
+                    ],
+                    stops: [0.0, 0.04, 0.96, 1.0],
+                  ).createShader(bounds);
+                },
+                blendMode: BlendMode.dstIn,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  itemCount: ThemeController.presetColors.length,
+                  itemBuilder: (context, index) {
+                    final item = ThemeController.presetColors[index];
+                    final isSelected = selectedIndex == index;
+                    final Color dynamicColor = isDynamicSel
+                        ? colorScheme.primary
+                        : const Color(0xFF6750A4);
+                    final Color displayColor =
+                        item.isDynamic ? dynamicColor : item.color!;
+
+                    return GestureDetector(
+                      onTap: () => controller.setColorIndex(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: displayColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected
+                                ? colorScheme.onSurface
+                                : Colors.transparent,
+                            width: 2.5,
+                          ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: displayColor.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                    spreadRadius: 0.5,
+                                  )
+                                ]
+                              : null,
+                        ),
+                        child: () {
+                          if (item.isDynamic) {
+                            return Icon(
+                              isSelected
+                                  ? Icons.check_rounded
+                                  : Icons.auto_awesome_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            );
+                          } else if (isSelected) {
+                            return const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            );
+                          }
+                          return null;
+                        }(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 6),
+          const Divider(height: 1, indent: 56),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -42,174 +178,100 @@ class ThemeSettingsCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.12),
+                        color: Colors.amber.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(
-                        Icons.color_lens_rounded,
-                        color: colorScheme.primary,
+                      child: const Icon(
+                        Icons.brightness_medium_rounded,
+                        color: Colors.amber,
                         size: 22,
                       ),
                     ),
                     const SizedBox(width: 14),
                     Text(
-                      '主题色调',
+                      '显示模式',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                         color: colorScheme.onSurface,
                       ),
                     ),
-                    const Spacer(),
-                    Obx(
-                      () => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: controller.currentSeedColor
-                              .withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          controller.currentSeedName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: controller.currentSeedColor,
-                          ),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Obx(() {
-                  final selectedIndex = controller.selectedColorIndex.value;
-                  final isDynamicSel = controller.isDynamicSelected;
-                  return SizedBox(
-                    height: 48,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: ThemeController.presetColors.length,
-                      itemBuilder: (context, index) {
-                        final item = ThemeController.presetColors[index];
-                        final isSelected = selectedIndex == index;
-                        final Color dynamicColor = isDynamicSel
-                            ? colorScheme.primary
-                            : const Color(0xFF6750A4);
-                        final Color displayColor =
-                            item.isDynamic ? dynamicColor : item.color!;
+                  final currentMode = controller.currentThemeMode.value;
+                  const options = [
+                    (
+                      mode: ThemeMode.system,
+                      label: '跟随系统',
+                      icon: Icons.auto_mode_rounded,
+                    ),
+                    (
+                      mode: ThemeMode.light,
+                      label: '浅色',
+                      icon: Icons.light_mode_rounded,
+                    ),
+                    (
+                      mode: ThemeMode.dark,
+                      label: '深色',
+                      icon: Icons.dark_mode_rounded,
+                    ),
+                  ];
 
-                        return GestureDetector(
-                          onTap: () => controller.setColorIndex(index),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 2),
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: displayColor,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? colorScheme.onSurface
+                  return Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: options.map((opt) {
+                        final selected = currentMode == opt.mode;
+                        return Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => controller.setThemeMode(opt.mode),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? colorScheme.secondaryContainer
                                     : Colors.transparent,
-                                width: 2.5,
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: displayColor
-                                            .withValues(alpha: 0.45),
-                                        blurRadius: 8,
-                                        spreadRadius: 1,
-                                      )
-                                    ]
-                                  : null,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    opt.icon,
+                                    size: 16,
+                                    color: selected
+                                        ? colorScheme.onSecondaryContainer
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    opt.label,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: selected
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                      color: selected
+                                          ? colorScheme.onSecondaryContainer
+                                          : colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: () {
-                              if (item.isDynamic) {
-                                return Icon(
-                                  isSelected
-                                      ? Icons.check_rounded
-                                      : Icons.auto_awesome_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                );
-                              } else if (isSelected) {
-                                return const Icon(
-                                  Icons.check_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                );
-                              }
-                              return null;
-                            }(),
                           ),
                         );
-                      },
+                      }).toList(),
                     ),
-                  );
-                }),
-              ],
-            ),
-          ),
-          const Divider(height: 1, indent: 56),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.brightness_medium_rounded,
-                    color: Colors.amber,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  '显示模式',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const Spacer(),
-                Obx(() {
-                  final mode = controller.currentThemeMode.value;
-                  return SegmentedButton<ThemeMode>(
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        icon: Icon(Icons.auto_mode_rounded, size: 16),
-                        label: Text('自动', style: TextStyle(fontSize: 12)),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        icon: Icon(Icons.light_mode_rounded, size: 16),
-                        label: Text('浅色', style: TextStyle(fontSize: 12)),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        icon: Icon(Icons.dark_mode_rounded, size: 16),
-                        label: Text('深色', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: (Set<ThemeMode> newSelection) {
-                      controller.setThemeMode(newSelection.first);
-                    },
                   );
                 }),
               ],

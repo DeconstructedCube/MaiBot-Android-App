@@ -9,7 +9,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
+import android.system.Os
+import android.system.OsConstants
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
 import androidx.fragment.app.FragmentActivity
@@ -42,6 +45,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var mContext: Context
     private lateinit var fragmentManager: FragmentManager
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private var lastProcJiffies: Long = -1L
+    private var lastSampleElapsedMs: Long = -1L
     private val finishUiReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (ACTION_FINISH_UI == intent?.action && !isFinishing) {
@@ -193,6 +198,14 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                 }
+                "get_resource_usage" -> {
+                    ioExecutor.execute {
+                        val payload = sampleResourceUsage()
+                        Handler(Looper.getMainLooper()).post {
+                            result.success(payload)
+                        }
+                    }
+                }
                 "is_accessibility_enabled" -> {
                     result.success(isAccessibilityServiceEnabled())
                 }
@@ -338,6 +351,115 @@ class MainActivity : FragmentActivity() {
             }
         }
         return false
+    }
+
+    private fun sampleResourceUsage(): Map<String, Any> {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(memInfo)
+
+        val systemTotalMb = memInfo.totalMem / (1024.0 * 1024.0)
+        val systemAvailMb = memInfo.availMem / (1024.0 * 1024.0)
+
+        var appProcessMb = 0.0
+        val appPidSet = HashSet<Int>()
+        try {
+            val running = am?.runningAppProcesses
+            if (running != null) {
+                val myUid = android.os.Process.myUid()
+                val pids = running.filter { it.uid == myUid }.map { it.pid }.toIntArray()
+                for (p in pids) appPidSet.add(p)
+                if (pids.isNotEmpty()) {
+                    val memInfos = am.getProcessMemoryInfo(pids)
+                    for (info in memInfos) {
+                        appProcessMb += info.totalPss / 1024.0
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        var totalProcJiffies = 0L
+        var containerMemoryMb = 0.0
+        var containerProcessCount = 0
+
+        try {
+            val procDirs = File("/proc").listFiles { f ->
+                f.isDirectory && f.name.all { it.isDigit() }
+            }
+            if (procDirs != null) {
+                for (dir in procDirs) {
+                    val pid = dir.name.toIntOrNull() ?: continue
+                    val statFile = File(dir, "stat")
+                    if (!statFile.canRead()) continue
+                    try {
+                        val statText = statFile.readText()
+                        val rParen = statText.lastIndexOf(')')
+                        if (rParen <= 0 || rParen + 2 >= statText.length) continue
+                        val commStart = statText.indexOf('(')
+                        val comm = if (commStart in 0 until rParen) statText.substring(commStart + 1, rParen) else ""
+                        val rest = statText.substring(rParen + 2).trim().split(Regex("\\s+"))
+                        if (rest.size > 12) {
+                            val utime = rest[11].toLongOrNull() ?: 0L
+                            val stime = rest[12].toLongOrNull() ?: 0L
+                            totalProcJiffies += (utime + stime)
+                        }
+
+                        if (!appPidSet.contains(pid)) {
+                            val lowerComm = comm.lowercase()
+                            val isContainerProc = lowerComm.contains("proot") ||
+                                lowerComm.contains("python") ||
+                                lowerComm == "uv" ||
+                                lowerComm == "uvx" ||
+                                lowerComm == "bash" ||
+                                lowerComm == "sh" ||
+                                lowerComm == "script"
+                            if (isContainerProc) {
+                                containerProcessCount++
+                                val statusFile = File(dir, "status")
+                                if (statusFile.canRead()) {
+                                    for (line in statusFile.readLines()) {
+                                        if (line.startsWith("VmRSS:")) {
+                                            val kb = line.substringAfter("VmRSS:").trim()
+                                                .split(Regex("\\s+")).firstOrNull()?.toDoubleOrNull() ?: 0.0
+                                            containerMemoryMb += kb / 1024.0
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
+
+        val nowMs = SystemClock.elapsedRealtime()
+        var cpuPercent = 0.0
+        if (lastProcJiffies >= 0L && lastSampleElapsedMs > 0L) {
+            val deltaMs = nowMs - lastSampleElapsedMs
+            val deltaJiffies = (totalProcJiffies - lastProcJiffies).coerceAtLeast(0L)
+            if (deltaMs > 100L) {
+                val clkTck = try {
+                    Os.sysconf(OsConstants._SC_CLK_TCK).takeIf { it > 0 } ?: 100L
+                } catch (_: Exception) {
+                    100L
+                }
+                val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+                cpuPercent = ((deltaJiffies.toDouble() / clkTck) / (deltaMs / 1000.0 * cores) * 100.0)
+                    .coerceIn(0.0, 100.0)
+            }
+        }
+        lastProcJiffies = totalProcJiffies
+        lastSampleElapsedMs = nowMs
+
+        return mapOf(
+            "cpuPercent" to cpuPercent,
+            "appMemoryMb" to (appProcessMb + containerMemoryMb),
+            "containerMemoryMb" to containerMemoryMb,
+            "processCount" to containerProcessCount,
+            "systemAvailMb" to systemAvailMb,
+            "systemTotalMb" to systemTotalMb
+        )
     }
 
     override fun onDestroy() {
