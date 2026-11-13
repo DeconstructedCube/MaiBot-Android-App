@@ -320,6 +320,8 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         _isAppInForeground = false;
         maibotClient.pauseReconnect();
         break;
+      default:
+        break;
     }
   }
 

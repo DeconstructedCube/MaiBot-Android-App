@@ -12,7 +12,6 @@ import '../../controllers/home_controller.dart';
 import '../settings/settings_page.dart';
 import '../terminal/terminal_tab_view.dart';
 import '../../navbar/bottom_nav_bar.dart';
-import '../../../core/config/app_config.dart';
 import '../settings/maintenance_actions.dart';
 
 class WebViewPage extends StatefulWidget {

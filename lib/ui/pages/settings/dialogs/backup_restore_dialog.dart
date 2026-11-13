@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 import '../../../../core/services/backend_process_manager.dart';
@@ -327,6 +326,7 @@ Future<void> showBackupRestoreDialog({
                     icon: const Icon(Icons.check_rounded, size: 18),
                     label: const Text('开始恢复'),
                     onPressed: () {
+                      final navigator = Navigator.of(context);
                       unawaited(() async {
                         setState(() => isRestoring = true);
                         final success =
@@ -338,7 +338,8 @@ Future<void> showBackupRestoreDialog({
                           restartService: false,
                           showSnackbar: false,
                         );
-                          Navigator.of(context).pop();
+                        if (navigator.mounted) {
+                          navigator.pop();
                         } else if (Get.isDialogOpen == true) {
                           Get.back(canPop: false);
                         }
