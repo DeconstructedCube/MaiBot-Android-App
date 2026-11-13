@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
@@ -38,14 +38,15 @@ class TokenAndWebviewCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Obx(() {
-            final token =
-                homeController.maiBotWebUiToken.value;
+            final token = homeController.maiBotWebUiToken.value;
+            final source = homeController.maiBotTokenSource.value;
             return _buildTokenTile(
               context: context,
               icon: Icons.key_rounded,
               iconColor: Colors.purple,
               title: 'MaiBot 登录 Token',
               token: token,
+              tokenSource: source,
             );
           }),
           const Divider(height: 1, indent: 56),
@@ -61,11 +62,15 @@ class TokenAndWebviewCard extends StatelessWidget {
     required Color iconColor,
     required String title,
     required String token,
+    required String tokenSource,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final bool hasToken = token.isNotEmpty;
     final String tokenDisplay =
         token.length > 20 ? '${token.substring(0, 16)}••••' : token;
+    final String sourceTag = tokenSource == 'temporary'
+        ? '临时密码'
+        : (tokenSource == 'configured' ? '固定密码' : '');
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -77,16 +82,38 @@ class TokenAndWebviewCard extends StatelessWidget {
         ),
         child: Icon(icon, color: iconColor, size: 22),
       ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
-          color: colorScheme.onSurface,
-        ),
+      title: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          if (sourceTag.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                sourceTag,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
       subtitle: Text(
-        hasToken ? tokenDisplay : '未检测到 Token（读取自 data/webui.json）',
+        hasToken ? tokenDisplay : '未检测到 Token（读取自 host/webui.json）',
         style: TextStyle(
           fontSize: 12,
           color: hasToken
@@ -104,15 +131,15 @@ class TokenAndWebviewCard extends StatelessWidget {
               size: 18,
               color: colorScheme.onSurfaceVariant,
             ),
-            tooltip: '从 data/webui.json 重新读取',
+            tooltip: '从 host/webui.json 重新读取',
             onPressed: () {
               unawaited(() async {
                 final ok = await homeController.reloadTokensFromDisk();
                 Get.snackbar(
                   ok ? '已刷新' : '未读取到 Token',
                   ok
-                      ? '已从 data/webui.json 更新密钥'
-                      : '尚未生成或未找到 data/webui.json 中的 access_token',
+                      ? '已从 webui.json 更新密钥'
+                      : '尚未生成或未找到 webui.json 中的 access_token',
                   snackPosition: SnackPosition.BOTTOM,
                   duration: const Duration(seconds: 2),
                 );

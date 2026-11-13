@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -149,7 +149,9 @@ class _WebViewPageState extends State<WebViewPage> {
   }
 
   void _initMaiBotController() {
-    final initialPort = homeController.activeWebPort.value;
+    final initialUrl = homeController.activeWebEntryUrl.value.isNotEmpty
+        ? homeController.activeWebEntryUrl.value
+        : 'http://127.0.0.1:${homeController.activeWebPort.value}';
     _maiBotController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -173,7 +175,7 @@ class _WebViewPageState extends State<WebViewPage> {
           },
         ),
       )
-      ..loadRequest(Uri.parse('http://127.0.0.1:$initialPort'));
+      ..loadRequest(Uri.parse(initialUrl));
 
     _configureAndroidPlatform(_maiBotController, enableDebugging: kDebugMode);
 

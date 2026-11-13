@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:settings/settings.dart';
 import '../pages/privacy_agree_page.dart';
 import '../pages/terminal/terminal_page.dart';
@@ -10,26 +11,32 @@ class AppRoutes {
   static const String terminal = '/terminal';
   static const String webview = '/webview';
 
-  static final routes = [
-    GetPage(
-      name: privacy,
-      page: () => PrivacyAgreePage(
-        onAgreeTap: () {
-          'privacy'.setting.set(true);
-          Get.offAllNamed(terminal);
-          Get.find<HomeController>().startBootstrapSequence();
-        },
-      ),
-      transition: Transition.fadeIn,
-    ),
-    GetPage(
-      name: terminal,
-      page: () => const TerminalPage(),
-    ),
-    GetPage(
-      name: webview,
-      page: () => const WebViewPage(),
-      transition: Transition.fadeIn,
-    ),
-  ];
+  static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
+    switch (settings.name) {
+      case privacy:
+        return GetPageRoute(
+          settings: settings,
+          page: () => PrivacyAgreePage(
+            onAgreeTap: () {
+              'privacy'.setting.set(true);
+              Get.offAllNamed(terminal);
+              Get.find<HomeController>().startBootstrapSequence();
+            },
+          ),
+          transition: Transition.fadeIn,
+        );
+      case webview:
+        return GetPageRoute(
+          settings: settings,
+          page: () => const WebViewPage(),
+          transition: Transition.fadeIn,
+        );
+      case terminal:
+      default:
+        return GetPageRoute(
+          settings: settings,
+          page: () => const TerminalPage(),
+        );
+    }
+  }
 }

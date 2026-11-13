@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import '../constants/scripts.dart' as scripts;
@@ -96,12 +96,13 @@ class BackupService {
     }
   }
 
-  /// 探测备份文件内部包含的具体模块
+  /// 探测备份文件内部包含的具体模块（兼容传统根目录布局与 MaiBot 1.4.x host/ + bots/<id>/ 多实例布局）
   static Future<Map<String, bool>> inspectBackupContents(File backupFile) async {
     final result = {
       'data': false,
       'config': false,
       'plugins': false,
+      'host': false,
     };
 
     try {
@@ -113,15 +114,29 @@ class BackupService {
 
       if (proc.exitCode == 0) {
         final lines = proc.stdout.toString().split('\n');
-        for (final line in lines) {
-          if (line.startsWith('MaiBot/data/')) result['data'] = true;
-          if (line.startsWith('MaiBot/config/')) result['config'] = true;
-          if (line.startsWith('MaiBot/plugins/')) result['plugins'] = true;
+        for (final rawLine in lines) {
+          final line = rawLine.trim();
+          if (line.isEmpty) continue;
+          if (line.startsWith('MaiBot/host/')) {
+            result['host'] = true;
+          }
+          if (line.startsWith('MaiBot/data/') ||
+              RegExp(r'^MaiBot/bots/[^/]+/data/').hasMatch(line)) {
+            result['data'] = true;
+          }
+          if (line.startsWith('MaiBot/config/') ||
+              RegExp(r'^MaiBot/bots/[^/]+/config/').hasMatch(line)) {
+            result['config'] = true;
+          }
+          if (line.startsWith('MaiBot/plugins/') ||
+              RegExp(r'^MaiBot/bots/[^/]+/plugins/').hasMatch(line)) {
+            result['plugins'] = true;
+          }
         }
       }
     } catch (e) {
       Log.w('解析备份目录结构异常: $e', tag: 'BackupService');
-      return {'data': true, 'config': true, 'plugins': true};
+      return {'data': true, 'config': true, 'plugins': true, 'host': true};
     }
 
     return result;
@@ -145,9 +160,11 @@ class BackupService {
       return false;
     }
 
-    final dataPath = '${scripts.ubuntuPath}/root/MaiBot/data';
-    final dataDir = Directory(dataPath);
-    if (!await dataDir.exists()) {
+    final maibotRoot = '${scripts.ubuntuPath}/root/MaiBot';
+    final dataDir = Directory('$maibotRoot/data');
+    final botsDir = Directory('$maibotRoot/bots');
+    final hostDir = Directory('$maibotRoot/host');
+    if (!await dataDir.exists() && !await botsDir.exists() && !await hostDir.exists()) {
       Get.snackbar(
         '备份失败',
         'MaiBot 数据目录不存在',
@@ -223,33 +240,45 @@ class BackupService {
       autoRestart: restoreService,
       action: () async {
         try {
-          final List<String> pathsToCreate = [
-            '${scripts.ubuntuPath}/root/MaiBot/config',
-            '${scripts.ubuntuPath}/root/MaiBot/plugins',
-          ];
-          for (final path in pathsToCreate) {
-            final dir = Directory(path);
-            if (!await dir.exists()) {
-              await dir.create(recursive: true);
+          final List<String> backupTargets = [];
+          for (final rel in ['host', 'bots', 'data', 'config', 'plugins']) {
+            final dir = Directory('$maibotRoot/$rel');
+            if (await dir.exists()) {
+              backupTargets.add('MaiBot/$rel');
             }
+          }
+
+          if (backupTargets.isEmpty) {
+            dismissDialog();
+            Get.snackbar(
+              '备份失败',
+              '未找到可备份的数据或配置目录',
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: Colors.red,
+              colorText: Colors.white,
+            );
+            return false;
           }
 
           final result = await Process.run('${RuntimeEnvir.binPath}/busybox', [
             'tar',
             '-czf',
             backupPath,
-            '--exclude=MaiBot/plugins/hello_world_plugin',
+            '--exclude=*/hello_world_plugin',
             '--exclude=*/__pycache__*',
             '--exclude=*/.pytest_cache*',
-            '--exclude=MaiBot/data/cache*',
+            '--exclude=*/data/cache*',
+            '--exclude=*/data/prompt_imgs*',
+            '--exclude=*/temp/*',
+            '--exclude=*/logs/*',
+            '--exclude=*.lock',
+            '--exclude=MaiBot/host/control.json',
             '--exclude=*.log',
             '--exclude=*.tmp',
             '--exclude=*Crashpad*',
             '-C',
             '${scripts.ubuntuPath}/root',
-            'MaiBot/data',
-            'MaiBot/config',
-            'MaiBot/plugins',
+            ...backupTargets,
           ]);
 
           dismissDialog();
@@ -319,11 +348,44 @@ class BackupService {
       autoRestart: restartService,
       action: () async {
         try {
-          final available = await inspectBackupContents(backupFile);
-          final extractTargets = <String>[];
-          if (restoreData && available['data'] == true) extractTargets.add('MaiBot/data');
-          if (restoreConfig && available['config'] == true) extractTargets.add('MaiBot/config');
-          if (restorePlugins && available['plugins'] == true) extractTargets.add('MaiBot/plugins');
+          final procList = await Process.run('${RuntimeEnvir.binPath}/busybox', [
+            'tar',
+            '-tzf',
+            backupFile.path,
+          ]);
+          final archiveLines = procList.exitCode == 0
+              ? procList.stdout.toString().split('\n')
+              : <String>[];
+
+          final targetSet = <String>{};
+          final botDataRe = RegExp(r'^(MaiBot/bots/[^/]+/data)(?:/|$)');
+          final botConfigRe = RegExp(r'^(MaiBot/bots/[^/]+/config)(?:/|$)');
+          final botPluginsRe = RegExp(r'^(MaiBot/bots/[^/]+/plugins)(?:/|$)');
+
+          for (final rawLine in archiveLines) {
+            final line = rawLine.trim();
+            if (line.isEmpty) continue;
+            if (restoreConfig && line.startsWith('MaiBot/host/')) {
+              targetSet.add('MaiBot/host');
+            }
+            if (restoreData) {
+              if (line.startsWith('MaiBot/data/')) targetSet.add('MaiBot/data');
+              final m = botDataRe.firstMatch(line);
+              if (m != null) targetSet.add(m.group(1)!);
+            }
+            if (restoreConfig) {
+              if (line.startsWith('MaiBot/config/')) targetSet.add('MaiBot/config');
+              final m = botConfigRe.firstMatch(line);
+              if (m != null) targetSet.add(m.group(1)!);
+            }
+            if (restorePlugins) {
+              if (line.startsWith('MaiBot/plugins/')) targetSet.add('MaiBot/plugins');
+              final m = botPluginsRe.firstMatch(line);
+              if (m != null) targetSet.add(m.group(1)!);
+            }
+          }
+
+          final extractTargets = targetSet.toList();
 
           if (extractTargets.isEmpty) {
             if (showSnackbar) {

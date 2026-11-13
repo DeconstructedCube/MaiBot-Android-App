@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 import '../../../../core/services/backend_process_manager.dart';
@@ -194,6 +195,41 @@ Future<void> showBackupRestoreDialog({
                                   '$fDate · ${fMB}MB',
                                   style: const TextStyle(fontSize: 11),
                                 ),
+                                trailing: isInitialInstall
+                                    ? null
+                                    : IconButton(
+                                        icon: Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 18,
+                                          color: colorScheme.error,
+                                        ),
+                                        tooltip: '删除此备份',
+                                        onPressed: () {
+                                          unawaited(() async {
+                                            try {
+                                              if (await f.exists()) {
+                                                await f.delete();
+                                              }
+                                              if (context.mounted) {
+                                                setState(() {
+                                                  backups.removeAt(idx);
+                                                  if (backups.isEmpty) {
+                                                    Navigator.of(context).pop();
+                                                  } else if (selectedBackupIndex >= backups.length) {
+                                                    selectedBackupIndex = backups.length - 1;
+                                                  }
+                                                });
+                                              }
+                                            } catch (e) {
+                                              Get.snackbar(
+                                                '删除失败',
+                                                e.toString(),
+                                                snackPosition: SnackPosition.BOTTOM,
+                                              );
+                                            }
+                                          }());
+                                        },
+                                      ),
                                 onTap: () =>
                                     setState(() => selectedBackupIndex = idx),
                               );
@@ -271,13 +307,13 @@ Future<void> showBackupRestoreDialog({
                               CheckboxListTile(
                                 dense: true,
                                 title: const Text(
-                                  '核心配置与密钥',
+                                  '核心配置与宿主凭据',
                                   style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600),
                                 ),
                                 subtitle: const Text(
-                                  'MaiBot/config 目录',
+                                  'config 与 host 配置目录',
                                   style: TextStyle(fontSize: 11),
                                 ),
                                 value: restoreConfig,

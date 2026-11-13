@@ -8,13 +8,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_localizations:
-    sdk: flutter
   # pub repo
   intl: ^0.20.2
   async: ^2.11.0
   cupertino_icons: ^1.0.2
-  get: ^4.6.5
+  get: ^4.7.3
   device_info_plus: ^13.1.0
   package_info_plus: ^10.1.0
   path: ^1.9.1
@@ -24,7 +22,8 @@ dependencies:
   http: ^1.2.2
   url_launcher: ^6.3.1
   file_picker: ^12.3.0
-  flutter_markdown: ^0.7.4+3
+  flutter_markdown_plus: ^1.0.12
+  material_ui: ^1.11.0
 
   # get repo
   xterm: ^4.0.0
@@ -33,7 +32,7 @@ dependencies:
   global_repository:
     path: ./packages/global_repository
   shizuku_api: ^1.2.2
-  dynamic_color: ^1.9.0
+  dynamic_color: ^2.1.0
 
 dependency_overrides:
   xterm:

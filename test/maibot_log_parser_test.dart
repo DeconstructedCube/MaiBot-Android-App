@@ -9,12 +9,19 @@ void main() {
       final clean = MaibotLogParser.stripAnsi(raw);
       expect(clean, '[INFO] WebUI 登录 Token: mySecretToken123');
     });
-    test('parses MaiBot WebUI hex and custom tokens', () {
+    test('parses legacy and MaiBot 1.4.x WebUI tokens and ticket URLs', () {
       const line = '2026-10-25 [INFO] 🔑 WebUI 登录 Token: deadbeef0123456789abcdef';
       expect(MaibotLogParser.parseMaibotToken(line), 'deadbeef0123456789abcdef');
       const customLine = '2026-10-25 [INFO] 🔑 WebUI 登录 Token: MaiBot_Custom#2026!';
       expect(MaibotLogParser.parseMaibotToken(customLine), 'MaiBot_Custom#2026!');
+      const hostLine = 'WebUI 临时登录密码：abcdef1234567890';
+      expect(MaibotLogParser.parseMaibotToken(hostLine), 'abcdef1234567890');
       expect(MaibotLogParser.parseMaibotToken('无关日志行'), isNull);
+
+      const urlLine = 'WebUI：http://127.0.0.1:8001/bots#ticket=xyz123（登录链接一分钟内有效）';
+      expect(MaibotLogParser.parseWebUiUrl(urlLine), 'http://127.0.0.1:8001/bots#ticket=xyz123');
+      const legacyUrl = '2026-10-25 访问地址: http://127.0.0.1:8001';
+      expect(MaibotLogParser.parseWebUiUrl(legacyUrl), 'http://127.0.0.1:8001');
     });
   });
 

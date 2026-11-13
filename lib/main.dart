@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
 import 'package:settings/settings.dart';
@@ -54,16 +53,14 @@ class MaiBot extends StatelessWidget {
         themeController.updateSystemDynamicSchemes(lightDynamic, darkDynamic);
 
         return Obx(() {
-          return GetMaterialApp(
+          return MaterialApp(
             title: 'MaiBot Android',
+            navigatorKey: Get.key,
+            navigatorObservers: [GetObserver()],
             theme: themeController.getLightTheme(dynamicLightScheme: lightDynamic),
             darkTheme: themeController.getDarkTheme(dynamicDarkScheme: darkDynamic),
             themeMode: themeController.currentThemeMode.value,
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             supportedLocales: const [
               Locale('zh', 'CN'),
               Locale('en', 'US'),
@@ -71,12 +68,14 @@ class MaiBot extends StatelessWidget {
             initialRoute: 'privacy'.setting.get() == true
                 ? AppRoutes.terminal
                 : AppRoutes.privacy,
-            getPages: AppRoutes.routes,
+            onGenerateRoute: AppRoutes.onGenerateRoute,
             builder: (context, child) {
-              return ViewMetric(
-                uiWidth: 375,
-                screenWidth: MediaQuery.of(context).size.width,
-                child: child ?? const SizedBox.shrink(),
+              return MaterialUiCompatibilityBridge(
+                child: ViewMetric(
+                  uiWidth: 375,
+                  screenWidth: MediaQuery.of(context).size.width,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
           );

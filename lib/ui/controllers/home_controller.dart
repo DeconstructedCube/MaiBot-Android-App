@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
@@ -57,7 +57,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   final WebviewController webviewController = Get.put(WebviewController());
   final RxString maiBotWebUiToken = ''.obs;
+  final RxString maiBotTokenSource = ''.obs;
   final RxInt activeWebPort = Ports.maibotWeb.obs;
+  final RxString activeWebEntryUrl = ''.obs;
   void _syncProgressFromLifecycle() {
     progressTracker.updateFromStateMachine(
       lifecycle.progress,
@@ -78,15 +80,23 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   void _handleMaibotLine(String line) {
     final cleanLine = MaibotLogParser.stripAnsi(line);
-    if (cleanLine.contains('WebUI') || cleanLine.contains('Token')) {
+    final parsedToken = MaibotLogParser.parseMaibotToken(cleanLine);
+    if (parsedToken != null) {
+      maiBotWebUiToken.value = parsedToken;
+      if (cleanLine.contains('临时登录密码')) {
+        maiBotTokenSource.value = 'temporary';
+      }
+    } else if (cleanLine.contains('WebUI') || cleanLine.contains('Token')) {
       unawaited(reloadTokensFromDisk());
     }
-    if (cleanLine.contains('访问地址:')) {
-      final portMatch = RegExp(r':(\d{2,5})').firstMatch(cleanLine);
-      final parsedPort = int.tryParse(portMatch?.group(1) ?? '');
-      if (parsedPort != null && parsedPort > 0 && parsedPort <= 65535) {
-        activeWebPort.value = parsedPort;
+
+    final parsedUrl = MaibotLogParser.parseWebUiUrl(cleanLine);
+    if (parsedUrl != null) {
+      final uri = Uri.tryParse(parsedUrl);
+      if (uri != null && uri.port > 0 && uri.port <= 65535) {
+        activeWebPort.value = uri.port;
       }
+      activeWebEntryUrl.value = parsedUrl;
       lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
       _syncProgressFromLifecycle();
       unawaited(reloadTokensFromDisk().then((_) {
@@ -97,33 +107,60 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  /// 从本地 /root/MaiBot/data/webui.json 直接读取 MaiBot WebUI 登录凭证 (Token)
+  /// 从本地优先读取 /root/MaiBot/host/webui.json（兼容旧版 data/webui.json）获取 WebUI 凭据
   Future<bool> reloadTokensFromDisk() async {
-    try {
-      final file = File('$ubuntuPath/root/MaiBot/data/webui.json');
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final parsed = jsonDecode(content);
-        if (parsed is Map) {
-          final token = (parsed['access_token'] ?? parsed['token'])?.toString().trim() ?? '';
-          if (token.isNotEmpty) {
-            maiBotWebUiToken.value = token;
-            Log.i('成功从 data/webui.json 读取到 MaiBot Token', tag: 'MaiBot');
-            return true;
+    final candidatePaths = [
+      '$ubuntuPath/root/MaiBot/host/webui.json',
+      '$ubuntuPath/root/MaiBot/data/webui.json',
+    ];
+    for (final path in candidatePaths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          final content = await file.readAsString();
+          final parsed = jsonDecode(content);
+          if (parsed is Map) {
+            final token = (parsed['access_token'] ?? parsed['token'])?.toString().trim() ?? '';
+            final source = parsed['token_source']?.toString().trim() ?? '';
+            if (token.isNotEmpty) {
+              maiBotWebUiToken.value = token;
+              maiBotTokenSource.value = source;
+              Log.i('成功从 $path 读取到 MaiBot Token', tag: 'MaiBot');
+              return true;
+            }
           }
         }
+      } catch (e) {
+        Log.e('读取 $path 失败: $e', tag: 'MaiBot');
       }
-    } catch (e) {
-      Log.e('读取 MaiBot data/webui.json 失败: $e', tag: 'MaiBot');
     }
     return false;
   }
 
+  /// 从 host/config.toml 读取自定义 WebUI 端口并与默认探测端口合并
+  Future<List<int>> _resolveProbePorts() async {
+    final ports = <int>[...Ports.localhostProbePorts];
+    try {
+      final hostConfig = File('$ubuntuPath/root/MaiBot/host/config.toml');
+      if (await hostConfig.exists()) {
+        final content = await hostConfig.readAsString();
+        final match = RegExp(r'^\s*port\s*=\s*(\d{2,5})\b', multiLine: true).firstMatch(content);
+        final customPort = int.tryParse(match?.group(1) ?? '');
+        if (customPort != null && customPort > 0 && customPort <= 65535) {
+          ports.remove(customPort);
+          ports.insert(0, customPort);
+        }
+      }
+    } catch (_) {}
+    return ports;
+  }
+
   /// 启动有界端口重试探测，取代旧的无限 Timer.periodic
   void _startWebPortProbe() {
-    unawaited(
-      _portProber.waitForAnyPort(
-        Ports.localhostProbePorts,
+    unawaited(() async {
+      final probePorts = await _resolveProbePorts();
+      await _portProber.waitForAnyPort(
+        probePorts,
         onReady: (port) {
           Log.i('有界探测命中 Web 端口 127.0.0.1:$port，标记端口就绪', tag: 'MaiBot');
           activeWebPort.value = port;
@@ -134,10 +171,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
           }));
           _checkAndNavigateToWebview();
         },
-      ),
-    );
+      );
+    }());
   }
-
   /// 首次或同意隐私政策后的环境引导流水线
   Future<void> startBootstrapSequence() async {
     if (_bootstrapStarted) return;
@@ -179,8 +215,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       Log.i('检测到原生守护进程已在运行，跳过安装流水线直接连接', tag: 'MaiBot');
       lifecycle.markBackendRequested(message: '正在恢复后台运行会话...');
       await reloadTokensFromDisk();
+      final probePorts = await _resolveProbePorts();
       final hitPort = await PortProbeService.probeAnyPort(
-        Ports.localhostProbePorts,
+        probePorts,
         timeout: const Duration(milliseconds: 500),
       );
       if (hitPort != null) {

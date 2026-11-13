@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 /// 隐私政策与用户协议确认页面
 class PrivacyAgreePage extends StatefulWidget {
@@ -64,7 +64,7 @@ class _PrivacyAgreePageState extends State<PrivacyAgreePage> {
                       data: _policyContent!,
                       selectable: true,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                      styleSheet: MarkdownStyleSheet(
                         p: TextStyle(
                           fontSize: 14,
                           height: 1.5,

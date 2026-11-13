@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:xterm/xterm.dart';
 
 /// 根据当前 Material 3 主题动态生成终端色彩配置（统一采用深色/纯黑沉浸画布，杜绝亮白刺眼）
