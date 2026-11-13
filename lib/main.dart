@@ -70,12 +70,10 @@ class MaiBot extends StatelessWidget {
                 : AppRoutes.privacy,
             onGenerateRoute: AppRoutes.onGenerateRoute,
             builder: (context, child) {
-              return MaterialUiCompatibilityBridge(
-                child: ViewMetric(
-                  uiWidth: 375,
-                  screenWidth: MediaQuery.of(context).size.width,
-                  child: child ?? const SizedBox.shrink(),
-                ),
+              return ViewMetric(
+                uiWidth: 375,
+                screenWidth: MediaQuery.of(context).size.width,
+                child: child ?? const SizedBox.shrink(),
               );
             },
           );

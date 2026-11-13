@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -17,15 +19,7 @@ Future<void> showBackupRestoreDialog({
   }
 
   final backups = await BackupService.getAvailableBackupEntriesAsync();
-  if (backups.isEmpty) {
-    if (!isInitialInstall) {
-      Get.snackbar(
-        '未找到备份',
-        '未在手机存储或应用备份目录中找到备份存档',
-        snackPosition: SnackPosition.BOTTOM,
-        duration: const Duration(seconds: 3),
-      );
-    }
+  if (backups.isEmpty && isInitialInstall) {
     onCompleted?.call();
     return;
   }
@@ -41,7 +35,9 @@ Future<void> showBackupRestoreDialog({
       builder: (context, setState) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
-        final currentFile = backups[selectedBackupIndex].file;
+        final currentFile = backups.isEmpty
+            ? null
+            : backups[selectedBackupIndex].file;
         return PopScope(
           canPop: !isRestoring,
           child: AlertDialog(
@@ -100,24 +96,78 @@ Future<void> showBackupRestoreDialog({
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '选择备份存档 (${backups.length} 个可用)',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '选择备份存档 (${backups.length} 个可用)',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextButton.icon(
+                              icon: const Icon(Icons.folder_open_rounded, size: 15),
+                              label: const Text('从文件导入', style: TextStyle(fontSize: 12)),
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () {
+                                unawaited(() async {
+                                  final picked = await FilePicker.pickFile(
+                                    type: FileType.custom,
+                                    allowedExtensions: ['gz', 'tgz'],
+                                  );
+                                  if (picked?.path != null) {
+                                    final pickedFile = File(picked!.path!);
+                                    final stat = await pickedFile.stat();
+                                    if (context.mounted) {
+                                      setState(() {
+                                        backups.insert(
+                                          0,
+                                          BackupEntry(
+                                            file: pickedFile,
+                                            modified: stat.modified,
+                                            sizeBytes: stat.size,
+                                          ),
+                                        );
+                                        selectedBackupIndex = 0;
+                                      });
+                                    }
+                                  }
+                                }());
+                              },
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainer,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: colorScheme.outlineVariant
-                                  .withValues(alpha: 0.5),
+                        if (backups.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainer,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                              ),
                             ),
-                          ),
-                          child: ListView.separated(
+                            child: Text(
+                              '默认目录暂无备份存档，可点击右上角「从文件导入」选择外部 .tar.gz 备份包',
+                              style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                            ),
+                          )
+                        else
+                          Container(
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainer,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: colorScheme.outlineVariant
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: ListView.separated(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: backups.length > 4 ? 4 : backups.length,
@@ -361,19 +411,21 @@ Future<void> showBackupRestoreDialog({
                   FilledButton.icon(
                     icon: const Icon(Icons.check_rounded, size: 18),
                     label: const Text('开始恢复'),
-                    onPressed: () {
-                      final navigator = Navigator.of(context);
-                      unawaited(() async {
-                        setState(() => isRestoring = true);
-                        final success =
-                            await BackupService.performSelectiveRestore(
-                          backupFile: currentFile,
-                          restoreData: restoreData,
-                          restoreConfig: restoreConfig,
-                          restorePlugins: restorePlugins,
-                          restartService: false,
-                          showSnackbar: false,
-                        );
+                    onPressed: currentFile == null
+                        ? null
+                        : () {
+                            final navigator = Navigator.of(context);
+                            unawaited(() async {
+                              setState(() => isRestoring = true);
+                              final success =
+                                  await BackupService.performSelectiveRestore(
+                                backupFile: currentFile,
+                                restoreData: restoreData,
+                                restoreConfig: restoreConfig,
+                                restorePlugins: restorePlugins,
+                                restartService: false,
+                                showSnackbar: false,
+                              );
                         if (navigator.mounted) {
                           navigator.pop();
                         } else if (Get.isDialogOpen == true) {

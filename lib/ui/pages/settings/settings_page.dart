@@ -13,6 +13,8 @@ import '../../../core/constants/scripts.dart' as scripts;
 import '../../../core/config/app_config.dart';
 import '../../../core/services/backend_process_manager.dart';
 import '../../../core/services/backup_service.dart';
+import '../../../core/services/host_rescue_service.dart';
+import '../../../core/utils/file_utils.dart';
 import '../../../core/utils/version_utils.dart';
 import 'dialogs/update_dialogs.dart';
 import 'dialogs/git_clone_dialog.dart';
@@ -155,6 +157,56 @@ class _SettingsPageState extends State<SettingsPage> {
         duration: const Duration(seconds: 3),
       );
     }
+  }
+
+  void _showWebUiRescueDialog() {
+    Get.dialog(
+      AlertDialog(
+        icon: const Icon(Icons.medical_services_rounded, size: 28, color: Colors.deepPurple),
+        title: const Text('WebUI 离线急救'),
+        content: const Text(
+          '当忘记固定密码、修改端口/反爬配置导致 WebUI 无法打开时，可直接从容器文件层恢复访问：',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('取消'),
+          ),
+          OutlinedButton(
+            onPressed: () {
+              Get.back();
+              unawaited(() async {
+                await HostRescueService.repairHostWebUiConfig();
+                homeController.activeWebPort.value = Ports.maibotWeb;
+                Get.snackbar(
+                  '已修复宿主配置',
+                  '已恢复默认 127.0.0.1:8001 并重启 MaiBot',
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+              }());
+            },
+            child: const Text('重置端口/反爬'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Get.back();
+              unawaited(() async {
+                final newToken = await HostRescueService.resetWebUiCredentials();
+                homeController.maiBotWebUiToken.value = newToken;
+                homeController.maiBotTokenSource.value = 'temporary';
+                Get.snackbar(
+                  '密码已重置',
+                  '已生成新临时密码并清空旧会话，服务重启后生效',
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+              }());
+            },
+            child: const Text('重置登录密码'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -398,6 +450,70 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                       onTap: () => unawaited(BackupService.showRestoreDialog()),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _buildSettingTile(
+                      icon: Icons.vpn_key_off_rounded,
+                      iconColor: Colors.deepPurple.shade600,
+                      title: 'WebUI 密码与端口急救',
+                      subtitle: '离线重置登录密码或修复锁死的 8001 端口配置',
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onTap: () => _showWebUiRescueDialog(),
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _buildSettingTile(
+                      icon: Icons.cleaning_services_rounded,
+                      iconColor: Colors.amber.shade900,
+                      title: '清理容器残留锁',
+                      subtitle: '移除异常退出遗留的 run.lock / instance.lock',
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onTap: () {
+                        unawaited(() async {
+                          final removed = await HostRescueService.cleanStaleLocks();
+                          Get.snackbar(
+                            '清理完成',
+                            removed > 0
+                                ? '已移除 $removed 个残留锁文件并重启服务'
+                                : '未发现残留锁文件',
+                            snackPosition: SnackPosition.BOTTOM,
+                          );
+                        }());
+                      },
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    _buildSettingTile(
+                      icon: Icons.bug_report_rounded,
+                      iconColor: Colors.teal.shade700,
+                      title: '导出诊断日志包',
+                      subtitle: '打包日志与宿主配置至下载目录（自动脱敏密钥）',
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      onTap: () {
+                        unawaited(() async {
+                          final file = await HostRescueService.exportDiagnosticsBundle(
+                            terminalLogText: homeController.terminal.getPlainText(),
+                          );
+                          Get.snackbar(
+                            file != null ? '导出成功' : '导出失败',
+                            file != null
+                                ? '诊断包已保存至: ${file.path}'
+                                : '未找到 MaiBot 日志或目录不存在',
+                            snackPosition: SnackPosition.BOTTOM,
+                            duration: const Duration(seconds: 4),
+                          );
+                        }());
+                      },
                     ),
                     const Divider(height: 1, indent: 56),
                     _buildSettingTile(
