@@ -5,7 +5,6 @@ import 'package:global_repository/global_repository.dart';
 import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
 import 'port_probe_service.dart';
-import '../../ui/pages/settings/maintenance_actions.dart';
 
 enum ProcessState {
   stopped,
@@ -51,14 +50,8 @@ class BackendProcessManager {
   static bool _userClickedStop = false;
   static bool get userClickedStop => _userClickedStop;
 
-  /// 初始化状态与事件监听
+  /// 初始化后端进程管理器
   static void init() {
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'exit_app') {
-        Log.i('收到通知栏退出指令，正在退出应用...', tag: 'BackendProcessManager');
-        await MaintenanceActions.performExit(showConfirmation: false);
-      }
-    });
     Log.d('BackendProcessManager initialized', tag: 'BackendProcessManager');
   }
 
@@ -214,18 +207,14 @@ class BackendProcessManager {
         Log.w('通知安全停机异常: $e', tag: 'BackendProcessManager');
       }
 
-      // 轮询等待守护 PTY 端口关闭且状态退场（最多约 2.5s），规避固定延迟竞态
-      for (int i = 0; i < 25; i++) {
-        await Future.delayed(const Duration(milliseconds: 100));
+      // 原生侧已通过 ResultReceiver 等待进程树真正退场，此处仅做轻量端口确认兜底
+      for (int i = 0; i < 6; i++) {
         final daemonUp = await isDaemonRunning(
-          timeout: const Duration(milliseconds: 120),
+          timeout: const Duration(milliseconds: 100),
         );
-        final stateStopped = maibotState.value == ProcessState.stopped;
-        if (!daemonUp && (i >= 5 || stateStopped)) {
-          break;
-        }
+        if (!daemonUp) break;
+        await Future.delayed(const Duration(milliseconds: 80));
       }
-      await Future.delayed(const Duration(milliseconds: 150));
     }
 
     try {

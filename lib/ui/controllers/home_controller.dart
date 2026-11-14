@@ -60,6 +60,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   final RxString maiBotTokenSource = ''.obs;
   final RxInt activeWebPort = Ports.maibotWeb.obs;
   final RxString activeWebEntryUrl = ''.obs;
+  Worker? _maibotStateWorker;
   void _syncProgressFromLifecycle() {
     progressTracker.updateFromStateMachine(
       lifecycle.progress,
@@ -99,10 +100,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       activeWebEntryUrl.value = parsedUrl;
       lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
       _syncProgressFromLifecycle();
-      unawaited(reloadTokensFromDisk().then((_) {
-        _checkAndNavigateToWebview();
-      }));
-      _checkAndNavigateToWebview();
+      unawaited(reloadTokensFromDisk().whenComplete(_checkAndNavigateToWebview));
       Future.delayed(const Duration(milliseconds: 2000), () => update());
     }
   }
@@ -166,10 +164,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
           activeWebPort.value = port;
           lifecycle.markPortsReady();
           _syncProgressFromLifecycle();
-          unawaited(reloadTokensFromDisk().then((_) {
-            _checkAndNavigateToWebview();
-          }));
-          _checkAndNavigateToWebview();
+          unawaited(reloadTokensFromDisk().whenComplete(_checkAndNavigateToWebview));
         },
       );
     }());
@@ -320,7 +315,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     );
     unawaited(reloadTokensFromDisk());
 
-    ever(BackendProcessManager.maibotState, (state) {
+    _maibotStateWorker = ever(BackendProcessManager.maibotState, (state) {
       if (state == ProcessState.running) {
         _checkAndNavigateToWebview();
       }
@@ -375,6 +370,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   @override
   void onClose() {
     try {
+      _maibotStateWorker?.dispose();
       _portProber.dispose();
       progressTracker.dispose();
       maibotClient.dispose();

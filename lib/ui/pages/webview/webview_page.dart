@@ -429,6 +429,7 @@ class _WebViewPageState extends State<WebViewPage> {
                   SettingsPage(
                     key: const ValueKey('settings_page'),
                     maiBotController: _maiBotController,
+                    isVisible: validCurrentIndex == settingsIndex,
                     onNavigate: (index) {
                       _switchTab(index);
                     },

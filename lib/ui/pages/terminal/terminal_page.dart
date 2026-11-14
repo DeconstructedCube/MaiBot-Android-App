@@ -75,7 +75,7 @@ class _TerminalPageState extends State<TerminalPage> {
         backgroundColor: colorScheme.surface,
         body: SafeArea(
           child: GestureDetector(
-            onTap: _cycleNextMode,
+            onTap: isTerminalVisible ? null : _cycleNextMode,
             behavior: HitTestBehavior.translucent,
             child: Stack(
               children: [

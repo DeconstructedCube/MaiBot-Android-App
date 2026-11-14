@@ -29,13 +29,14 @@ import 'widgets/token_and_webview_card.dart';
 class SettingsPage extends StatefulWidget {
   final WebViewController maiBotController;
   final Function(int) onNavigate;
+  final bool isVisible;
 
   const SettingsPage({
     super.key,
     required this.maiBotController,
     required this.onNavigate,
+    this.isVisible = true,
   });
-
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
@@ -232,7 +233,7 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                const ResourceMonitorCard(),
+                ResourceMonitorCard(isVisible: widget.isVisible),
                 const SizedBox(height: 16),
                 _buildSectionHeader('界面与主题', Icons.palette_rounded),
                 ThemeSettingsCard(controller: themeController),

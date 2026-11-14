@@ -8,8 +8,9 @@ import '../../../../core/config/app_config.dart';
 
 /// 设置页：实时资源监控卡片（CPU / 容器内存 / 应用与系统内存）
 class ResourceMonitorCard extends StatefulWidget {
-  const ResourceMonitorCard({super.key});
+  final bool isVisible;
 
+  const ResourceMonitorCard({super.key, this.isVisible = true});
   @override
   State<ResourceMonitorCard> createState() => _ResourceMonitorCardState();
 }
@@ -34,8 +35,24 @@ class _ResourceMonitorCardState extends State<ResourceMonitorCard>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_refreshStats());
-    _startTimer();
+    if (widget.isVisible) {
+      unawaited(_refreshStats());
+      _startTimer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ResourceMonitorCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible != oldWidget.isVisible) {
+      if (widget.isVisible && _isForeground) {
+        unawaited(_refreshStats());
+        _startTimer();
+      } else {
+        _timer?.cancel();
+        _timer = null;
+      }
+    }
   }
 
   @override
@@ -49,8 +66,10 @@ class _ResourceMonitorCardState extends State<ResourceMonitorCard>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _isForeground = true;
-      unawaited(_refreshStats());
-      _startTimer();
+      if (widget.isVisible) {
+        unawaited(_refreshStats());
+        _startTimer();
+      }
     } else if (state == AppLifecycleState.paused) {
       _isForeground = false;
       _timer?.cancel();
@@ -60,8 +79,9 @@ class _ResourceMonitorCardState extends State<ResourceMonitorCard>
 
   void _startTimer() {
     _timer?.cancel();
+    if (!widget.isVisible || !_isForeground) return;
     _timer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (_isForeground && mounted) {
+      if (_isForeground && widget.isVisible && mounted) {
         unawaited(_refreshStats());
       }
     });

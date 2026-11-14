@@ -6,10 +6,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.ResultReceiver
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -257,20 +261,33 @@ class ProotService : Service() {
         }
     }
 
+    private fun readResultReceiver(intent: Intent?): ResultReceiver? {
+        if (intent == null) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra("resultReceiver", ResultReceiver::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra("resultReceiver")
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
         val action = intent?.action
         val userStopped = BackendPrefs.isUserStopped(this)
+        val resultReceiver = readResultReceiver(intent)
 
         if ("SET_WIFI_LOCK" == action) {
             val enabled = intent.getBooleanExtra("enabled", true)
             BackendPrefs.setWifiLockEnabled(this, enabled)
             updateWifiLock(enabled)
+            resultReceiver?.send(0, null)
             return START_NOT_STICKY
         }
         if ("SET_AUTO_START" == action) {
             val enabled = intent.getBooleanExtra("enabled", true)
             BackendPrefs.setAutoStartEnabled(this, enabled)
+            resultReceiver?.send(0, null)
             return START_NOT_STICKY
         }
 
@@ -280,12 +297,15 @@ class ProotService : Service() {
         if (isStopAction) {
             Log.i(TAG, "收到明确停机指令 (action=$action)，立即终止后台所有进程并撤回前台通知")
             BackendPrefs.setUserStopped(this, true)
-            val binPath = intent?.getStringExtra("binPath") ?: sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
 
             serviceScope.launch {
-                safelyTerminateAllProcesses(binPath)
-                withContext(Dispatchers.Main) {
-                    stopForegroundAndSelf()
+                try {
+                    safelyTerminateAllProcesses()
+                } finally {
+                    resultReceiver?.send(0, Bundle())
+                    withContext(Dispatchers.Main) {
+                        stopForegroundAndSelf()
+                    }
                 }
             }
             return START_NOT_STICKY
@@ -293,6 +313,7 @@ class ProotService : Service() {
 
         if (userStopped && action != "CONTROL" && action != "START") {
             Log.i(TAG, "用户之前已显式退出应用，禁止后台自动唤醒")
+            resultReceiver?.send(0, null)
             stopForegroundAndSelf()
             return START_NOT_STICKY
         }
@@ -319,6 +340,7 @@ class ProotService : Service() {
             } else {
                 if (!BackendPrefs.isAutoStartEnabled(this) && action == null) {
                     Log.i(TAG, "自启动已被用户关闭，ProotService 保持待命状态")
+                    resultReceiver?.send(0, null)
                     return START_NOT_STICKY
                 }
                 binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
@@ -343,8 +365,14 @@ class ProotService : Service() {
             ensureForegroundNotification()
 
             commandChannel.trySend {
-                handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
+                try {
+                    handleCommandAsync(action, ctrlAction, ctrlTarget, curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
+                } finally {
+                    resultReceiver?.send(0, Bundle())
+                }
             }
+        } else {
+            resultReceiver?.send(0, null)
         }
         return START_NOT_STICKY
     }
@@ -373,11 +401,14 @@ class ProotService : Service() {
                 "STOP" -> {
                     if (ctrlTarget == "MAIBOT") {
                         maibotProcess?.stop()
-                        killTargetProcesses(curBin, arrayOf("python", "python3"))
+                        maibotProcess = null
+                        terminateOrphanDaemonProcesses()
                     } else if (ctrlTarget == "ALL") {
                         BackendPrefs.setUserStopped(this, true)
-                        safelyTerminateAllProcesses(curBin)
-                        stopForegroundAndSelf()
+                        safelyTerminateAllProcesses()
+                        withContext(Dispatchers.Main) {
+                            stopForegroundAndSelf()
+                        }
                     }
                 }
                 "RESTART" -> {
@@ -387,7 +418,7 @@ class ProotService : Service() {
                     }
                 }
                 "SAFE_TERMINATE" -> {
-                    safelyTerminateAllProcesses(curBin)
+                    safelyTerminateAllProcesses()
                 }
             }
             return
@@ -401,7 +432,6 @@ class ProotService : Service() {
 
         startMaiBot(curBin, curHome, curTmp, curUbuntu, curUvIndex, curCols, curRows)
     }
-
     private fun stopForegroundAndSelf() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -430,13 +460,12 @@ class ProotService : Service() {
         if (maibotProcess != null) {
             maibotProcess?.stop()
             maibotProcess = null
-            killTargetProcesses(binPath, arrayOf("python", "python3"))
-            delay(350)
         }
+        terminateOrphanDaemonProcesses()
 
         Log.i(TAG, "启动 MaiBot 服务进程 (cols=$cols, rows=$rows)...")
         val maibotCmd = """
-            export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            export PATH=/root/MaiBot/.venv/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             export TERM=xterm-256color
             export COLORTERM=truecolor
             export FORCE_COLOR=1
@@ -465,10 +494,15 @@ class ProotService : Service() {
             export MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED=1
             if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); md5sum EULA.md | awk '{printf "%s", $1}' > eula.confirmed; fi
             if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); md5sum PRIVACY.md | awk '{printf "%s", $1}' > privacy.confirmed; fi
-            if command -v script >/dev/null 2>&1; then
-                exec script -q -e -c "stty cols $cols rows $rows 2>/dev/null; /root/.local/bin/uv run --color always bot.py" /dev/null
+            if [ -f /root/MaiBot/.venv_sync_ready ] && [ -x /root/MaiBot/.venv/bin/python ]; then
+                RUN_CMD="/root/MaiBot/.venv/bin/python -u bot.py"
             else
-                exec /root/.local/bin/uv run --color always bot.py
+                RUN_CMD="/root/.local/bin/uv run --color always bot.py"
+            fi
+            if command -v script >/dev/null 2>&1; then
+                exec script -q -e -c "stty cols $cols rows $rows 2>/dev/null; ${'$'}RUN_CMD" /dev/null
+            else
+                exec ${'$'}RUN_CMD
             fi
         """.trimIndent() + "\n"
 
@@ -477,41 +511,192 @@ class ProotService : Service() {
         }
     }
 
+    private data class ProcEntry(
+        val pid: Int,
+        val ppid: Int,
+        val pgrp: Int,
+        val session: Int,
+        val isDaemonMarked: Boolean
+    )
 
-    private fun killTargetProcesses(binPath: String, targets: Array<String>) {
-        try {
-            Runtime.getRuntime().exec(arrayOf("$binPath/busybox", "killall", "-9", *targets)).waitFor()
-        } catch (_: Exception) {}
-    }
-
-    private suspend fun safelyTerminateAllProcesses(binPath: String?) {
-        maibotProcess?.stop()
-        if (binPath != null) {
-            try {
-                Runtime.getRuntime().exec(
-                    arrayOf("$binPath/busybox", "killall", "-2", "python", "python3", "bash", "sh")
-                ).waitFor()
-            } catch (_: Exception) {}
-            delay(500)
-            try {
-                Runtime.getRuntime().exec(
-                    arrayOf(
-                        "$binPath/busybox", "killall", "-9",
-                        "proot", "python", "python3", "bash", "sh", "uv", "uvx"
-                    )
-                ).waitFor()
-            } catch (_: Exception) {}
+    private fun hasDaemonMarker(environFile: File): Boolean {
+        return try {
+            if (!environFile.canRead()) return false
+            val raw = environFile.readBytes()
+            val marker = "MAIBOT_PROC_ROLE=daemon".toByteArray(Charsets.US_ASCII)
+            if (raw.size < marker.size) return false
+            outer@ for (i in 0..(raw.size - marker.size)) {
+                if (i > 0 && raw[i - 1] != 0.toByte()) continue
+                val end = i + marker.size
+                if (end < raw.size && raw[end] != 0.toByte()) continue
+                for (j in marker.indices) {
+                    if (raw[i + j] != marker[j]) continue@outer
+                }
+                return true
+            }
+            false
+        } catch (_: Exception) {
+            false
         }
     }
 
-    override fun onDestroy() {
-        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
-        val binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin"
+    private fun snapshotProcEntries(): List<ProcEntry> {
+        val myPid = android.os.Process.myPid()
+        val procDirs = File("/proc").listFiles { f ->
+            f.isDirectory && f.name.all { it.isDigit() }
+        } ?: return emptyList()
 
+        val entries = ArrayList<ProcEntry>(procDirs.size)
+        for (dir in procDirs) {
+            val pid = dir.name.toIntOrNull() ?: continue
+            if (pid <= 1 || pid == myPid) continue
+            val statFile = File(dir, "stat")
+            if (!statFile.canRead()) continue
+            try {
+                val statText = statFile.readText()
+                val rParen = statText.lastIndexOf(')')
+                if (rParen <= 0 || rParen + 2 >= statText.length) continue
+                val fields = statText.substring(rParen + 2).trim().split(Regex("\\s+"))
+                if (fields.size < 4) continue
+                val ppid = fields[1].toIntOrNull() ?: -1
+                val pgrp = fields[2].toIntOrNull() ?: -1
+                val session = fields[3].toIntOrNull() ?: -1
+                val marked = hasDaemonMarker(File(dir, "environ"))
+                entries.add(ProcEntry(pid, ppid, pgrp, session, marked))
+            } catch (_: Exception) {}
+        }
+        return entries
+    }
+
+    private fun collectManagedPids(rootPid: Long): Set<Int> {
+        val entries = snapshotProcEntries()
+        if (entries.isEmpty()) return emptySet()
+
+        val childrenMap = HashMap<Int, MutableList<Int>>()
+        var rootPgrp = -1
+        var rootSession = -1
+        val targetPids = LinkedHashSet<Int>()
+
+        for (entry in entries) {
+            childrenMap.getOrPut(entry.ppid) { ArrayList() }.add(entry.pid)
+            if (rootPid > 0 && entry.pid.toLong() == rootPid) {
+                rootPgrp = entry.pgrp
+                rootSession = entry.session
+                targetPids.add(entry.pid)
+            }
+            if (entry.isDaemonMarked) {
+                targetPids.add(entry.pid)
+            }
+        }
+
+        if (rootPgrp > 1 || rootSession > 1) {
+            for (entry in entries) {
+                if ((rootPgrp > 1 && entry.pgrp == rootPgrp) ||
+                    (rootSession > 1 && entry.session == rootSession)
+                ) {
+                    targetPids.add(entry.pid)
+                }
+            }
+        }
+
+        val queue = ArrayDeque<Int>(targetPids)
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeFirst()
+            val kids = childrenMap[cur] ?: continue
+            for (kid in kids) {
+                if (targetPids.add(kid)) {
+                    queue.addLast(kid)
+                }
+            }
+        }
+        return targetPids
+    }
+
+    private fun isProcessAliveCompat(p: Process): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return p.isAlive
+        }
+        return try {
+            p.exitValue()
+            false
+        } catch (_: IllegalThreadStateException) {
+            true
+        }
+    }
+
+    private fun sendSignal(pid: Int, signal: Int) {
+        try {
+            Os.kill(pid, signal)
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun terminateProcessTree(rootPid: Long, proc: Process?) {
+        val initialPids = collectManagedPids(rootPid)
+        if (initialPids.isEmpty() && (proc == null || !isProcessAliveCompat(proc))) {
+            return
+        }
+
+        if (rootPid > 1) {
+            sendSignal(-rootPid.toInt(), OsConstants.SIGINT)
+        }
+        for (pid in initialPids) {
+            sendSignal(pid, OsConstants.SIGINT)
+        }
+
+        for (i in 0 until 20) {
+            delay(60)
+            val aliveProc = proc != null && isProcessAliveCompat(proc)
+            val remaining = collectManagedPids(rootPid)
+            if (!aliveProc && remaining.isEmpty()) {
+                return
+            }
+        }
+
+        val survivors = collectManagedPids(rootPid)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            proc?.destroyForcibly()
+        } else {
+            proc?.destroy()
+        }
+        if (rootPid > 1) {
+            sendSignal(-rootPid.toInt(), OsConstants.SIGKILL)
+        }
+        for (pid in survivors) {
+            sendSignal(pid, OsConstants.SIGKILL)
+        }
+
+        for (i in 0 until 10) {
+            delay(50)
+            val aliveProc = proc != null && isProcessAliveCompat(proc)
+            val remaining = collectManagedPids(rootPid)
+            if (!aliveProc && remaining.isEmpty()) {
+                break
+            }
+        }
+    }
+
+    private suspend fun terminateOrphanDaemonProcesses() {
+        val orphans = collectManagedPids(-1L)
+        if (orphans.isNotEmpty()) {
+            Log.i(TAG, "清理残留 MaiBot 进程树: $orphans")
+            terminateProcessTree(-1L, null)
+        }
+    }
+
+    private suspend fun safelyTerminateAllProcesses() {
+        maibotProcess?.stop()
+        maibotProcess = null
+        terminateOrphanDaemonProcesses()
+    }
+
+    override fun onDestroy() {
         commandChannel.close()
-        runBlocking(Dispatchers.IO) {
-            withTimeoutOrNull(1500L) {
-                safelyTerminateAllProcesses(binPath)
+        val activeProcess = maibotProcess
+        if (activeProcess != null || collectManagedPids(-1L).isNotEmpty()) {
+            runBlocking(Dispatchers.IO) {
+                withTimeoutOrNull(1500L) {
+                    safelyTerminateAllProcesses()
+                }
             }
         }
         serviceScope.cancel()
@@ -524,7 +709,6 @@ class ProotService : Service() {
         }
         super.onDestroy()
     }
-
     override fun onTaskRemoved(rootIntent: Intent?) {
         Log.i(TAG, "onTaskRemoved: 用户划掉多任务卡片，ProotService 保持后台持续运行")
         super.onTaskRemoved(rootIntent)
@@ -745,17 +929,25 @@ class ProotService : Service() {
                     if (isStopped) return@launch
                     historyBuffer.clear()
 
-                    val cmd = mutableListOf(
-                        "$binPath/proot",
-                        "-0",
-                        "-r", ubuntuPath,
-                        "--link2symlink",
-                        "-b", "/dev",
-                        "-b", "/proc",
-                        "-b", "/sys",
-                        "-b", "$tmpPath:/tmp",
-                        "-b", "$tmpPath:/dev/shm",
-                        "-w", "/root"
+                    val cmd = mutableListOf<String>()
+                    val busyboxFile = File("$binPath/busybox")
+                    if (busyboxFile.exists()) {
+                        cmd.add(busyboxFile.absolutePath)
+                        cmd.add("setsid")
+                    }
+                    cmd.addAll(
+                        listOf(
+                            "$binPath/proot",
+                            "-0",
+                            "-r", ubuntuPath,
+                            "--link2symlink",
+                            "-b", "/dev",
+                            "-b", "/proc",
+                            "-b", "/sys",
+                            "-b", "$tmpPath:/tmp",
+                            "-b", "$tmpPath:/dev/shm",
+                            "-w", "/root"
+                        )
                     )
 
                     // Fake sysdata bindings to prevent Python/uv crashes on restricted Android /proc
@@ -787,6 +979,7 @@ class ProotService : Service() {
                         put("PROOT_TMP_DIR", tmpPath)
                         put("PROOT_LOADER", "$binPath/loader")
                         put("LD_LIBRARY_PATH", binPath)
+                        put("MAIBOT_PROC_ROLE", "daemon")
                         put("TERM", "xterm-256color")
                         put("COLORTERM", "truecolor")
                         put("FORCE_COLOR", "1")
@@ -812,7 +1005,6 @@ class ProotService : Service() {
                         put("TMP", "/tmp")
                     }
                     pb.redirectErrorStream(true)
-
                     if (isStopped) return@launch
 
                     val p = pb.start()
@@ -863,10 +1055,34 @@ class ProotService : Service() {
             }
         }
 
-        @Synchronized
+        private fun closeSocketAndClients() {
+            acceptJob?.cancel()
+            acceptJob = null
+            try {
+                serverSocket?.close()
+            } catch (_: IOException) {}
+            serverSocket = null
+            for (client in clients) {
+                client.close()
+            }
+            clients.clear()
+        }
+
         private fun scheduleRestart() {
             if (isStopped || restartCount >= 10) {
-                notifyState(ServiceState.STOPPED)
+                val finalState = if (!isStopped && restartCount >= 10) {
+                    Log.e(TAG, "$name 连续重启失败已达上限 ($restartCount)，进入 ERROR 终态并关闭监听端口")
+                    ServiceState.ERROR
+                } else {
+                    ServiceState.STOPPED
+                }
+                notifyState(finalState)
+                serviceScope.launch {
+                    delay(30)
+                    if (currentState == ServiceState.ERROR || isStopped) {
+                        closeSocketAndClients()
+                    }
+                }
                 return
             }
             restartJob?.cancel()
@@ -885,19 +1101,10 @@ class ProotService : Service() {
         fun isAlive(): Boolean {
             val p = process ?: return false
             if (isStopped) return false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                return p.isAlive
-            }
-            return try {
-                p.exitValue()
-                false
-            } catch (_: IllegalThreadStateException) {
-                true
-            }
+            return isProcessAliveCompat(p)
         }
 
-        @Synchronized
-        fun stop() {
+        suspend fun stop() {
             isStopped = true
             notifyState(ServiceState.STOPPING)
             restartCount = 0
@@ -905,24 +1112,18 @@ class ProotService : Service() {
             restartJob = null
             startJob?.cancel()
             startJob = null
-            acceptJob?.cancel()
-            acceptJob = null
             stdoutJob?.cancel()
             stdoutJob = null
 
-            process?.destroy()
+            val p = process
+            val pid = currentPid
             process = null
             currentPid = -1L
-            try {
-                serverSocket?.close()
-            } catch (_: IOException) {}
-            serverSocket = null
 
-            for (client in clients) {
-                client.close()
-            }
-            clients.clear()
+            terminateProcessTree(pid, p)
             notifyState(ServiceState.STOPPED)
+            delay(30)
+            closeSocketAndClients()
         }
     }
 }

@@ -193,7 +193,9 @@ class TerminalTabManager extends GetxController {
     final newTerminal = Terminal(maxLines: 5000);
     final prootPath = '${RuntimeEnvir.binPath}/proot';
     final args = ProotRunner.buildProotArgs(isInteractive: true);
-    final env = ProotRunner.getProotEnv();
+    final env = ProotRunner.getProotEnv(
+      extraEnv: {'MAIBOT_PROC_ROLE': 'interactive_terminal'},
+    );
     try {
       newTerminal.write('正在启动系统交互终端...\r\n\r\n');
       final process = await Process.start(prootPath, args, environment: env);

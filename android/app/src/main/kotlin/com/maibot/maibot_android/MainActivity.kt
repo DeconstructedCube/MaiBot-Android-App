@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Parcel
+import android.os.ResultReceiver
 import android.os.SystemClock
 import android.provider.Settings
 import android.system.Os
@@ -27,7 +29,7 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
-
+import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("DEPRECATION")
 class MainActivity : FragmentActivity() {
 
@@ -135,6 +137,22 @@ class MainActivity : FragmentActivity() {
                         BackendPrefs.setUserStopped(mContext, false)
                     }
 
+                    val needsAck = action.equals("stop", ignoreCase = true) ||
+                        action.equals("safe_terminate", ignoreCase = true) ||
+                        action.equals("restart", ignoreCase = true)
+
+                    val completed = AtomicBoolean(false)
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    val ipcReceiver = if (needsAck) {
+                        createIpcResultReceiver(mainHandler) {
+                            if (completed.compareAndSet(false, true)) {
+                                result.success(true)
+                            }
+                        }
+                    } else {
+                        null
+                    }
+
                     val intent = Intent(mContext, ProotService::class.java).apply {
                         if (action.equals("stop", ignoreCase = true) && target.equals("all", ignoreCase = true)) {
                             this.action = "STOP"
@@ -150,14 +168,35 @@ class MainActivity : FragmentActivity() {
                         if (!uvIndexUrl.isNullOrBlank()) putExtra("uvIndexUrl", uvIndexUrl)
                         if (cols != null && cols > 0) putExtra("cols", cols)
                         if (rows != null && rows > 0) putExtra("rows", rows)
+                        if (ipcReceiver != null) putExtra("resultReceiver", ipcReceiver)
                     }
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        mContext.startForegroundService(intent)
-                    } else {
-                        mContext.startService(intent)
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !action.equals("stop", ignoreCase = true) && !action.equals("safe_terminate", ignoreCase = true)) {
+                            mContext.startForegroundService(intent)
+                        } else {
+                            mContext.startService(intent)
+                        }
+                    } catch (e: Exception) {
+                        if (needsAck) {
+                            if (completed.compareAndSet(false, true)) {
+                                result.success(false)
+                            }
+                        } else {
+                            result.error("SERVICE_ERROR", e.message, null)
+                        }
+                        return@setMethodCallHandler
                     }
-                    result.success(true)
+
+                    if (needsAck) {
+                        mainHandler.postDelayed({
+                            if (completed.compareAndSet(false, true)) {
+                                result.success(true)
+                            }
+                        }, 5000L)
+                    } else {
+                        result.success(true)
+                    }
                 }
                 "extract_asset" -> {
                     val assetPath = call.argument<String>("assetPath")
@@ -249,17 +288,30 @@ class MainActivity : FragmentActivity() {
                 }
                 "exit_app" -> {
                     BackendPrefs.setUserStopped(mContext, true)
+                    val completed = AtomicBoolean(false)
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    fun finishAndKill() {
+                        if (!completed.compareAndSet(false, true)) return
+                        result.success(true)
+                        finishAffinity()
+                        mainHandler.postDelayed({
+                            android.os.Process.killProcess(android.os.Process.myPid())
+                        }, 100L)
+                    }
+
+                    val ipcReceiver = createIpcResultReceiver(mainHandler) {
+                        finishAndKill()
+                    }
                     val stopIntent = Intent(mContext, ProotService::class.java).apply {
                         action = "STOP"
+                        putExtra("resultReceiver", ipcReceiver)
                     }
                     try {
                         mContext.startService(stopIntent)
-                    } catch (_: Exception) {}
-                    result.success(true)
-                    finishAffinity()
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        android.os.Process.killProcess(android.os.Process.myPid())
-                    }, 250)
+                    } catch (_: Exception) {
+                        finishAndKill()
+                    }
+                    mainHandler.postDelayed({ finishAndKill() }, 1200L)
                 }
                 else -> {
                     result.notImplemented()
@@ -353,6 +405,69 @@ class MainActivity : FragmentActivity() {
         return false
     }
 
+    private fun createIpcResultReceiver(
+        handler: Handler,
+        onComplete: () -> Unit
+    ): ResultReceiver {
+        val localReceiver = object : ResultReceiver(handler) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                onComplete()
+            }
+        }
+        val parcel = Parcel.obtain()
+        return try {
+            localReceiver.writeToParcel(parcel, 0)
+            parcel.setDataPosition(0)
+            ResultReceiver.CREATOR.createFromParcel(parcel)
+        } finally {
+            parcel.recycle()
+        }
+    }
+
+    private fun readProcessMemoryMb(dir: File): Double {
+        val smapsRollup = File(dir, "smaps_rollup")
+        if (smapsRollup.canRead()) {
+            try {
+                smapsRollup.bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        if (line.startsWith("Pss:")) {
+                            val kb = extractLeadingNumber(line, 4)
+                            if (kb >= 0.0) return kb / 1024.0
+                            break
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        val statusFile = File(dir, "status")
+        if (statusFile.canRead()) {
+            try {
+                statusFile.bufferedReader().use { reader ->
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        if (line.startsWith("VmRSS:")) {
+                            val kb = extractLeadingNumber(line, 6)
+                            if (kb >= 0.0) return kb / 1024.0
+                            break
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return 0.0
+    }
+
+    private fun extractLeadingNumber(line: String, startOffset: Int): Double {
+        var i = startOffset
+        val len = line.length
+        while (i < len && line[i].isWhitespace()) i++
+        val start = i
+        while (i < len && line[i].isDigit()) i++
+        if (start == i) return -1.0
+        return line.substring(start, i).toDoubleOrNull() ?: -1.0
+    }
+
     private fun sampleResourceUsage(): Map<String, Any> {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         val memInfo = ActivityManager.MemoryInfo()
@@ -397,6 +512,20 @@ class MainActivity : FragmentActivity() {
                         if (rParen <= 0 || rParen + 2 >= statText.length) continue
                         val commStart = statText.indexOf('(')
                         val comm = if (commStart in 0 until rParen) statText.substring(commStart + 1, rParen) else ""
+                        val lowerComm = comm.lowercase()
+                        val isAppPid = appPidSet.contains(pid)
+                        val isContainerProc = !isAppPid && (
+                            lowerComm.contains("proot") ||
+                                lowerComm.contains("python") ||
+                                lowerComm == "uv" ||
+                                lowerComm == "uvx" ||
+                                lowerComm == "bash" ||
+                                lowerComm == "sh" ||
+                                lowerComm == "script" ||
+                                lowerComm == "node"
+                            )
+                        if (!isAppPid && !isContainerProc) continue
+
                         val rest = statText.substring(rParen + 2).trim().split(Regex("\\s+"))
                         if (rest.size > 12) {
                             val utime = rest[11].toLongOrNull() ?: 0L
@@ -404,29 +533,9 @@ class MainActivity : FragmentActivity() {
                             totalProcJiffies += (utime + stime)
                         }
 
-                        if (!appPidSet.contains(pid)) {
-                            val lowerComm = comm.lowercase()
-                            val isContainerProc = lowerComm.contains("proot") ||
-                                lowerComm.contains("python") ||
-                                lowerComm == "uv" ||
-                                lowerComm == "uvx" ||
-                                lowerComm == "bash" ||
-                                lowerComm == "sh" ||
-                                lowerComm == "script"
-                            if (isContainerProc) {
-                                containerProcessCount++
-                                val statusFile = File(dir, "status")
-                                if (statusFile.canRead()) {
-                                    for (line in statusFile.readLines()) {
-                                        if (line.startsWith("VmRSS:")) {
-                                            val kb = line.substringAfter("VmRSS:").trim()
-                                                .split(Regex("\\s+")).firstOrNull()?.toDoubleOrNull() ?: 0.0
-                                            containerMemoryMb += kb / 1024.0
-                                            break
-                                        }
-                                    }
-                                }
-                            }
+                        if (isContainerProc) {
+                            containerProcessCount++
+                            containerMemoryMb += readProcessMemoryMb(dir)
                         }
                     } catch (_: Exception) {}
                 }
