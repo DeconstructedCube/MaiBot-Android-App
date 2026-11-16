@@ -238,22 +238,24 @@ class TerminalTabManager extends GetxController {
         } catch (_) {}
       });
 
+      // ignore: cancel_subscriptions
       final subStdout = process.stdout
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen((data) {
         newTerminal.write(data.toTerminalCrlf());
       });
+      // ignore: cancel_subscriptions
       final subStderr = process.stderr
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen((data) {
         newTerminal.write(data.toTerminalCrlf());
       });
 
-      process.exitCode.then((code) {
+      unawaited(process.exitCode.then((code) {
         resizeDebounce?.cancel();
         Log.d('System tab process exited with code $code', tag: 'TerminalTabManager');
         newTerminal.write('\r\n\x1b[33m[终端会话已退出: $code]\x1b[0m\r\n');
-      });
+      }));
 
       final newTab = TerminalTab(
         id: newId,

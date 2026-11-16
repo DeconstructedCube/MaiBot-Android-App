@@ -62,7 +62,7 @@ Future<bool> _runGitTaskWithProgressDialog({
     }
   }
 
-  execute();
+  unawaited(execute());
 
   final result = await showAppDialog<bool>(
     barrierDismissible: false,

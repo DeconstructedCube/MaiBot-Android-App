@@ -81,14 +81,14 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     } else if (status.isPermanentlyDenied) {
       _showOpenSettingsDialog('通知权限', '请在系统设置中开启通知权限以保持前台服务运行。');
     }
-    _checkAllPermissions();
+    await _checkAllPermissions();
   }
 
   Future<void> _requestStoragePermission() async {
     var status = await Permission.manageExternalStorage.request();
     if (status.isGranted) {
       setState(() => _storageGranted = true);
-      _checkAllPermissions();
+      await _checkAllPermissions();
       return;
     }
 
@@ -98,7 +98,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     } else if (normalStorage.isPermanentlyDenied || status.isPermanentlyDenied) {
       _showOpenSettingsDialog('存储权限', '请在系统设置中授予存储权限用于环境配置与备份。');
     }
-    _checkAllPermissions();
+    await _checkAllPermissions();
   }
 
   Future<void> _requestBatteryOptimization() async {
@@ -106,7 +106,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     if (status.isGranted) {
       setState(() => _batteryOptimizationIgnored = true);
     }
-    _checkAllPermissions();
+    await _checkAllPermissions();
   }
 
   void _showOpenSettingsDialog(String title, String content) {

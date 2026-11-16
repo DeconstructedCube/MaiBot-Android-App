@@ -128,7 +128,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
       await channel.invokeMethod('open_accessibility_settings');
     } catch (e) {
       Log.e('打开无障碍设置失败: $e', tag: 'KeepAliveSettingsPage');
-      openAppSettings();
+      await openAppSettings();
     }
   }
 
@@ -331,7 +331,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
   Future<void> _requestNotificationPermission() async {
     final status = await Permission.notification.request();
     if (status.isPermanentlyDenied) {
-      openAppSettings();
+      await openAppSettings();
     }
     await _checkSystemPermissionsStatus();
   }
@@ -341,7 +341,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
     if (!status.isGranted) {
       status = await Permission.storage.request();
       if (status.isPermanentlyDenied) {
-        openAppSettings();
+        await openAppSettings();
       }
     }
     await _checkSystemPermissionsStatus();
