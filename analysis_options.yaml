@@ -23,7 +23,7 @@ linter:
     # avoid_print: false
     # prefer_single_quotes: true
 
-dcm:
+dart_code_linter:
   metrics:
     cyclomatic-complexity: 20
     maximum-nesting-level: 5
@@ -32,7 +32,10 @@ dcm:
     lines-of-code: 100
     maintainability-index: 50
     weight-of-class: 0.33
-  exclude:
+  metrics-exclude:
+    - packages/**
+    - test/**
+  rules-exclude:
     - packages/**
     - test/**
   rules:
