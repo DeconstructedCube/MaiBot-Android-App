@@ -44,7 +44,13 @@ void main() {
           ..writeAsStringSync('[webui]\nport = 9999\nanti_crawler_mode = "strict"\n');
         final runLock = File('${hostDir.path}/run.lock')..createSync();
         final controlJson = File('${hostDir.path}/control.json')..createSync();
-        final botLock = File('${tmp.path}/bots/abc123/instance.lock')
+        final runtimeGuard = File('${tmp.path}/.host-runtime/locks/update.guard')
+          ..createSync(recursive: true);
+        final runtimeLock = File('${tmp.path}/.host-runtime/locks/abc.lock')
+          ..createSync(recursive: true);
+        final botLock = File('${tmp.path}/bots/abc123/temp/instance.lock')
+          ..createSync(recursive: true);
+        final memorixLock = File('${tmp.path}/bots/abc123/data/.a_memorix_runtime_writer.lock')
           ..createSync(recursive: true);
 
         await HostRescueService.repairHostWebUiConfig(
@@ -59,10 +65,13 @@ void main() {
           maibotRoot: tmp.path,
           restartAfter: false,
         );
-        expect(removed, 3);
+        expect(removed, 6);
         expect(runLock.existsSync(), isFalse);
         expect(controlJson.existsSync(), isFalse);
+        expect(runtimeGuard.existsSync(), isFalse);
+        expect(runtimeLock.existsSync(), isFalse);
         expect(botLock.existsSync(), isFalse);
+        expect(memorixLock.existsSync(), isFalse);
       } finally {
         tmp.deleteSync(recursive: true);
       }

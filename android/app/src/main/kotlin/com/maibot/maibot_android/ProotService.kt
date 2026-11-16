@@ -489,6 +489,12 @@ class ProotService : Service() {
             export TMP=/tmp
             mkdir -p /tmp /var/tmp
             cd /root/MaiBot
+            rm -f /root/MaiBot/host/control.json /root/MaiBot/host/run.lock /root/MaiBot/host/model-config.lock \
+                  /root/MaiBot/data/.a_memorix_runtime_writer.lock \
+                  /root/MaiBot/.host-runtime/locks/* \
+                  /root/MaiBot/bots/*/temp/instance.lock \
+                  /root/MaiBot/bots/*/data/.a_memorix_runtime_writer.lock 2>/dev/null || true
+            rm -f /tmp/maibot-*/maibot-*.sock 2>/dev/null || true
             export MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED=1
             if [ -f EULA.md ]; then export EULA_AGREE=$(md5sum EULA.md | awk '{print $1}'); md5sum EULA.md | awk '{printf "%s", $1}' > eula.confirmed; fi
             if [ -f PRIVACY.md ]; then export PRIVACY_AGREE=$(md5sum PRIVACY.md | awk '{print $1}'); md5sum PRIVACY.md | awk '{printf "%s", $1}' > privacy.confirmed; fi
@@ -538,6 +544,20 @@ class ProotService : Service() {
         }
     }
 
+    private fun isMaiBotRuntimeCmdline(cmdlineFile: File): Boolean {
+        return try {
+            if (!cmdlineFile.canRead()) return false
+            val raw = cmdlineFile.readBytes()
+            if (raw.isEmpty()) return false
+            val cmdline = String(raw, Charsets.UTF_8).replace('\u0000', ' ')
+            cmdline.contains("src.host.") ||
+                cmdline.contains("src.runtime") ||
+                cmdline.contains("/root/MaiBot/bot.py")
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun snapshotProcEntries(): List<ProcEntry> {
         val myPid = android.os.Process.myPid()
         val procDirs = File("/proc").listFiles { f ->
@@ -559,7 +579,7 @@ class ProotService : Service() {
                 val ppid = fields[1].toIntOrNull() ?: -1
                 val pgrp = fields[2].toIntOrNull() ?: -1
                 val session = fields[3].toIntOrNull() ?: -1
-                val marked = hasDaemonMarker(File(dir, "environ"))
+                val marked = hasDaemonMarker(File(dir, "environ")) || isMaiBotRuntimeCmdline(File(dir, "cmdline"))
                 entries.add(ProcEntry(pid, ppid, pgrp, session, marked))
             } catch (_: Exception) {}
         }
@@ -641,15 +661,14 @@ class ProotService : Service() {
             sendSignal(pid, OsConstants.SIGINT)
         }
 
-        for (i in 0 until 20) {
-            delay(60)
+        for (i in 0 until 25) {
+            delay(100)
             val aliveProc = proc != null && isProcessAliveCompat(proc)
             val remaining = collectManagedPids(rootPid)
             if (!aliveProc && remaining.isEmpty()) {
                 return
             }
         }
-
         val survivors = collectManagedPids(rootPid)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             proc?.destroyForcibly()
@@ -681,12 +700,55 @@ class ProotService : Service() {
         }
     }
 
+    private fun cleanupStaleRuntimeArtifacts(ubuntuPath: String?, tmpPath: String?) {
+        if (!ubuntuPath.isNullOrBlank()) {
+            val root = File(ubuntuPath, "root/MaiBot")
+            if (root.exists()) {
+                val targets = listOf(
+                    File(root, "host/control.json"),
+                    File(root, "host/run.lock"),
+                    File(root, "host/model-config.lock"),
+                    File(root, "data/.a_memorix_runtime_writer.lock")
+                )
+                for (f in targets) {
+                    try { if (f.exists()) f.delete() } catch (_: Exception) {}
+                }
+                File(root, ".host-runtime/locks").listFiles()?.forEach { f ->
+                    if (f.isFile) {
+                        try { f.delete() } catch (_: Exception) {}
+                    }
+                }
+                File(root, "bots").listFiles()?.forEach { botDir ->
+                    if (botDir.isDirectory) {
+                        listOf(
+                            File(botDir, "temp/instance.lock"),
+                            File(botDir, "data/.a_memorix_runtime_writer.lock")
+                        ).forEach { f ->
+                            try { if (f.exists()) f.delete() } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+        }
+        if (!tmpPath.isNullOrBlank()) {
+            File(tmpPath).listFiles { f -> f.isDirectory && f.name.startsWith("maibot-") }?.forEach { dir ->
+                dir.listFiles { f -> f.isFile && f.name.endsWith(".sock") }?.forEach { sock ->
+                    try { sock.delete() } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
     private suspend fun safelyTerminateAllProcesses() {
+        val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+        val ubuntuPath = sp.getString("ubuntuPath", null)
+            ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+        val tmpPath = sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp"
         maibotProcess?.stop()
         maibotProcess = null
         terminateOrphanDaemonProcesses()
+        cleanupStaleRuntimeArtifacts(ubuntuPath, tmpPath)
     }
-
     override fun onDestroy() {
         commandChannel.close()
         val activeProcess = maibotProcess
@@ -1089,6 +1151,8 @@ class ProotService : Service() {
             restartJob = serviceScope.launch {
                 delay(delaySec * 1000L)
                 if (!isStopped) {
+                    terminateOrphanDaemonProcesses()
+                    cleanupStaleRuntimeArtifacts(ubuntuPath, tmpPath)
                     start()
                 }
             }

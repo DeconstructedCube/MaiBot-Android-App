@@ -134,6 +134,18 @@ trust_xff = false
         }
       }
 
+      final hostRuntimeLocks = Directory('$root/.host-runtime/locks');
+      if (await hostRuntimeLocks.exists()) {
+        await for (final entity in hostRuntimeLocks.list(followLinks: false)) {
+          if (entity is File) {
+            try {
+              await entity.delete();
+              removed++;
+            } catch (_) {}
+          }
+        }
+      }
+
       final botsDir = Directory('$root/bots');
       if (await botsDir.exists()) {
         await for (final entity in botsDir.list(recursive: true, followLinks: false)) {
@@ -148,6 +160,26 @@ trust_xff = false
           }
         }
       }
+
+      try {
+        final tmpDir = Directory(RuntimeEnvir.tmpPath);
+        if (await tmpDir.exists()) {
+          await for (final sub in tmpDir.list(followLinks: false)) {
+            if (sub is Directory &&
+                sub.uri.pathSegments.where((s) => s.isNotEmpty).last.startsWith('maibot-')) {
+              await for (final sock in sub.list(followLinks: false)) {
+                if (sock is File && sock.path.endsWith('.sock')) {
+                  try {
+                    await sock.delete();
+                    removed++;
+                  } catch (_) {}
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
       return removed;
     }
 

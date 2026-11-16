@@ -311,7 +311,7 @@ class MainActivity : FragmentActivity() {
                     } catch (_: Exception) {
                         finishAndKill()
                     }
-                    mainHandler.postDelayed({ finishAndKill() }, 1200L)
+                    mainHandler.postDelayed({ finishAndKill() }, 2800L)
                 }
                 else -> {
                     result.notImplemented()
