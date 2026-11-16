@@ -52,6 +52,15 @@ android {
         jniLibs {
             useLegacyPackaging true
         }
+        resources {
+            excludes += [
+                'META-INF/INDEX.LIST',
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*'
+            ]
+        }
     }
     buildTypes {
         release {
@@ -100,6 +109,7 @@ flutter {
 dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
-
-// implementation fileTree(include: ['*.jar', '*aar'], dir: 'libs')
+    implementation 'io.modelcontextprotocol:kotlin-sdk-server:0.14.0'
+    implementation 'io.ktor:ktor-server-cio:3.4.3'
+    implementation 'org.slf4j:slf4j-nop:2.0.17'
 }

@@ -20,6 +20,7 @@ import 'dialogs/update_dialogs.dart';
 import 'dialogs/git_clone_dialog.dart';
 import 'dialogs/git_dialogs.dart';
 import 'keep_alive_settings_page.dart';
+import 'mcp_settings_page.dart';
 import 'maintenance_actions.dart';
 import 'widgets/resource_monitor_card.dart';
 import 'widgets/settings_header_card.dart';
@@ -326,6 +327,21 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     onTap: () {
                       Get.to(() => const KeepAliveSettingsPage());
+                    },
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _buildSettingTile(
+                    icon: Icons.hub_rounded,
+                    iconColor: Colors.deepPurple,
+                    title: '内置 MCP 服务',
+                    subtitle: '为 Termux Agent 提供容器文件、日志与运维桥接',
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    onTap: () {
+                      Get.to(() => const McpSettingsPage());
                     },
                   ),
                   const Divider(height: 1, indent: 56),

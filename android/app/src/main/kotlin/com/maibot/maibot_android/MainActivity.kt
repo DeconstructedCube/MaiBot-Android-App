@@ -286,6 +286,80 @@ class MainActivity : FragmentActivity() {
                     } catch (_: Exception) {}
                     result.success(true)
                 }
+                "get_mcp_config" -> {
+                    val cfg = McpPrefsStore.loadConfig(mContext)
+                    val status = McpPrefsStore.loadStatus(mContext)
+                    result.success(
+                        mapOf(
+                            "enabled" to cfg.enabled,
+                            "port" to cfg.port,
+                            "token" to cfg.token,
+                            "allowWrite" to cfg.allowWrite,
+                            "allowExec" to cfg.allowExec,
+                            "allowServiceControl" to cfg.allowServiceControl,
+                            "rootScope" to cfg.rootScope,
+                            "protectSecrets" to cfg.protectSecrets,
+                            "running" to status.running,
+                            "boundPort" to status.boundPort,
+                            "lastError" to status.lastError,
+                            "requestCount" to status.requestCount,
+                            "lastToolName" to status.lastToolName,
+                            "lastToolAtMs" to status.lastToolAtMs
+                        )
+                    )
+                }
+                "set_mcp_config" -> {
+                    val current = McpPrefsStore.loadConfig(mContext)
+                    val enabled = call.argument<Boolean>("enabled") ?: current.enabled
+                    val port = (call.argument<Int>("port") ?: current.port).coerceIn(1024, 65535)
+                    val allowWrite = call.argument<Boolean>("allowWrite") ?: current.allowWrite
+                    val allowExec = call.argument<Boolean>("allowExec") ?: current.allowExec
+                    val allowServiceControl = call.argument<Boolean>("allowServiceControl") ?: current.allowServiceControl
+                    val rootScope = call.argument<String>("rootScope")?.let {
+                        if (it == "ubuntu") "ubuntu" else "maibot"
+                    } ?: current.rootScope
+                    val protectSecrets = call.argument<Boolean>("protectSecrets") ?: current.protectSecrets
+                    val updated = current.copy(
+                        enabled = enabled,
+                        port = port,
+                        allowWrite = allowWrite,
+                        allowExec = allowExec,
+                        allowServiceControl = allowServiceControl,
+                        rootScope = rootScope,
+                        protectSecrets = protectSecrets
+                    )
+                    McpPrefsStore.saveConfig(mContext, updated)
+                    if (enabled) {
+                        BackendPrefs.setUserStopped(mContext, false)
+                    }
+                    val intent = Intent(mContext, ProotService::class.java).apply {
+                        this.action = "UPDATE_MCP_CONFIG"
+                        putExtra("binPath", call.argument<String>("binPath"))
+                        putExtra("homePath", call.argument<String>("homePath"))
+                        putExtra("tmpPath", call.argument<String>("tmpPath"))
+                        putExtra("ubuntuPath", call.argument<String>("ubuntuPath"))
+                    }
+                    try {
+                        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            mContext.startForegroundService(intent)
+                        } else {
+                            mContext.startService(intent)
+                        }
+                    } catch (_: Exception) {}
+                    result.success(true)
+                }
+                "reset_mcp_token" -> {
+                    val updated = McpPrefsStore.resetToken(mContext)
+                    if (updated.enabled) {
+                        val intent = Intent(mContext, ProotService::class.java).apply {
+                            this.action = "UPDATE_MCP_CONFIG"
+                        }
+                        try {
+                            mContext.startService(intent)
+                        } catch (_: Exception) {}
+                    }
+                    result.success(updated.token)
+                }
                 "exit_app" -> {
                     BackendPrefs.setUserStopped(mContext, true)
                     val completed = AtomicBoolean(false)

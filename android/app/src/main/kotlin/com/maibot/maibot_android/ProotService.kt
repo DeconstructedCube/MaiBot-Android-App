@@ -175,8 +175,8 @@ class ProotService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var maibotProcess: ProotProcess? = null
+    private var mcpServer: McpBackendServer? = null
     private var isForegroundActive = false
-
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -185,6 +185,7 @@ class ProotService : Service() {
             acquire()
         }
         updateWifiLock(BackendPrefs.isWifiLockEnabled(this))
+        mcpServer = McpBackendServer(this, serviceScope, createMcpHostBridge())
         serviceScope.launch {
             for (cmd in commandChannel) {
                 try {
@@ -193,6 +194,11 @@ class ProotService : Service() {
                     Log.e(TAG, "Command execution error", e)
                 }
             }
+        }
+        val initialMcp = McpPrefsStore.loadConfig(this)
+        if (initialMcp.enabled && !BackendPrefs.isUserStopped(this)) {
+            ensureForegroundNotification()
+            mcpServer?.applyConfig(initialMcp)
         }
     }
 
@@ -290,7 +296,35 @@ class ProotService : Service() {
             resultReceiver?.send(0, null)
             return START_NOT_STICKY
         }
-
+        if ("UPDATE_MCP_CONFIG" == action) {
+            val binPath = intent.getStringExtra("binPath")
+            val homePath = intent.getStringExtra("homePath")
+            val tmpPath = intent.getStringExtra("tmpPath")
+            val ubuntuPath = intent.getStringExtra("ubuntuPath")
+            if (binPath != null && homePath != null) {
+                sp.edit().apply {
+                    putString("binPath", binPath)
+                    putString("homePath", homePath)
+                    putString("tmpPath", tmpPath)
+                    putString("ubuntuPath", ubuntuPath)
+                }.apply()
+            }
+            val mcpCfg = McpPrefsStore.loadConfig(this)
+            if (mcpCfg.enabled) {
+                BackendPrefs.setUserStopped(this, false)
+                ensureForegroundNotification()
+            }
+            commandChannel.trySend {
+                mcpServer?.applyConfig(mcpCfg)
+                if (!mcpCfg.enabled && maibotProcess?.isAlive() != true) {
+                    withContext(Dispatchers.Main) {
+                        stopForegroundAndSelf()
+                    }
+                }
+            }
+            resultReceiver?.send(0, Bundle())
+            return START_NOT_STICKY
+        }
         // 处理 STOP 指令：立即安全停机，绝不二次启动服务或重新挂载前台通知
         val isStopAction = "STOP".equals(action, ignoreCase = true) ||
                 ("CONTROL".equals(action, ignoreCase = true) && "STOP".equals(intent?.getStringExtra("action"), ignoreCase = true))
@@ -300,6 +334,7 @@ class ProotService : Service() {
 
             serviceScope.launch {
                 try {
+                    mcpServer?.stop()
                     safelyTerminateAllProcesses()
                 } finally {
                     resultReceiver?.send(0, Bundle())
@@ -700,7 +735,8 @@ class ProotService : Service() {
         }
     }
 
-    private fun cleanupStaleRuntimeArtifacts(ubuntuPath: String?, tmpPath: String?) {
+    private fun cleanupStaleRuntimeArtifacts(ubuntuPath: String?, tmpPath: String?): Int {
+        var removed = 0
         if (!ubuntuPath.isNullOrBlank()) {
             val root = File(ubuntuPath, "root/MaiBot")
             if (root.exists()) {
@@ -711,11 +747,11 @@ class ProotService : Service() {
                     File(root, "data/.a_memorix_runtime_writer.lock")
                 )
                 for (f in targets) {
-                    try { if (f.exists()) f.delete() } catch (_: Exception) {}
+                    try { if (f.exists() && f.delete()) removed++ } catch (_: Exception) {}
                 }
                 File(root, ".host-runtime/locks").listFiles()?.forEach { f ->
                     if (f.isFile) {
-                        try { f.delete() } catch (_: Exception) {}
+                        try { if (f.delete()) removed++ } catch (_: Exception) {}
                     }
                 }
                 File(root, "bots").listFiles()?.forEach { botDir ->
@@ -724,7 +760,7 @@ class ProotService : Service() {
                             File(botDir, "temp/instance.lock"),
                             File(botDir, "data/.a_memorix_runtime_writer.lock")
                         ).forEach { f ->
-                            try { if (f.exists()) f.delete() } catch (_: Exception) {}
+                            try { if (f.exists() && f.delete()) removed++ } catch (_: Exception) {}
                         }
                     }
                 }
@@ -733,8 +769,108 @@ class ProotService : Service() {
         if (!tmpPath.isNullOrBlank()) {
             File(tmpPath).listFiles { f -> f.isDirectory && f.name.startsWith("maibot-") }?.forEach { dir ->
                 dir.listFiles { f -> f.isFile && f.name.endsWith(".sock") }?.forEach { sock ->
-                    try { sock.delete() } catch (_: Exception) {}
+                    try { if (sock.delete()) removed++ } catch (_: Exception) {}
                 }
+            }
+        }
+        return removed
+    }
+
+    private fun createMcpHostBridge(): McpHostBridge {
+        return object : McpHostBridge {
+            override fun getPaths(): McpHostBridge.ContainerPaths {
+                val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+                return McpHostBridge.ContainerPaths(
+                    binPath = sp.getString("binPath", null) ?: "${filesDir.absolutePath}/usr/bin",
+                    homePath = sp.getString("homePath", null) ?: "${filesDir.absolutePath}/home",
+                    tmpPath = sp.getString("tmpPath", null) ?: "${filesDir.absolutePath}/usr/tmp",
+                    ubuntuPath = sp.getString("ubuntuPath", null)
+                        ?: "${filesDir.absolutePath}/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
+                )
+            }
+
+            override fun getServiceSnapshotJson(): org.json.JSONObject {
+                val proc = maibotProcess
+                val state = proc?.currentState ?: ServiceState.STOPPED
+                val pid = proc?.getPidSnapshot() ?: -1L
+                val retries = proc?.getRestartCountSnapshot() ?: 0
+                return org.json.JSONObject().apply {
+                    put("service", "maibot")
+                    put("state", state.value)
+                    put("alive", proc?.isAlive() == true)
+                    put("pid", pid)
+                    put("retryCount", retries)
+                }
+            }
+
+            override fun getLiveLogBytes(): ByteArray {
+                return maibotProcess?.snapshotHistory() ?: ByteArray(0)
+            }
+
+            override suspend fun controlService(action: String): String {
+                val p = getPaths()
+                val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+                val uvIndex = sp.getString("uvIndexUrl", null)
+                    ?: "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+                val cols = sp.getInt("cols", 80).coerceIn(40, 200)
+                val rows = sp.getInt("rows", 28).coerceIn(16, 100)
+                val done = kotlinx.coroutines.CompletableDeferred<String>()
+                commandChannel.trySend {
+                    try {
+                        when (action) {
+                            "start" -> {
+                                BackendPrefs.setUserStopped(this@ProotService, false)
+                                startMaiBot(p.binPath, p.homePath, p.tmpPath, p.ubuntuPath, uvIndex, cols, rows)
+                                done.complete("MaiBot start requested.")
+                            }
+                            "restart" -> {
+                                BackendPrefs.setUserStopped(this@ProotService, false)
+                                startMaiBot(p.binPath, p.homePath, p.tmpPath, p.ubuntuPath, uvIndex, cols, rows, forceRestart = true)
+                                done.complete("MaiBot restart requested.")
+                            }
+                            "stop" -> {
+                                maibotProcess?.stop()
+                                maibotProcess = null
+                                terminateOrphanDaemonProcesses()
+                                cleanupStaleRuntimeArtifacts(p.ubuntuPath, p.tmpPath)
+                                done.complete("MaiBot stopped.")
+                            }
+                            else -> done.complete("Unknown action: $action")
+                        }
+                    } catch (e: Exception) {
+                        done.complete("Action failed: ${e.message}")
+                    }
+                }
+                return done.await()
+            }
+
+            override suspend fun cleanStaleLocks(): Int {
+                val p = getPaths()
+                val sp = getSharedPreferences("maibot_backend_prefs", Context.MODE_PRIVATE)
+                val uvIndex = sp.getString("uvIndexUrl", null)
+                    ?: "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+                val cols = sp.getInt("cols", 80).coerceIn(40, 200)
+                val rows = sp.getInt("rows", 28).coerceIn(16, 100)
+                val done = kotlinx.coroutines.CompletableDeferred<Int>()
+                commandChannel.trySend {
+                    try {
+                        val wasRunning = maibotProcess?.isAlive() == true
+                        if (wasRunning) {
+                            maibotProcess?.stop()
+                            maibotProcess = null
+                        }
+                        terminateOrphanDaemonProcesses()
+                        val count = cleanupStaleRuntimeArtifacts(p.ubuntuPath, p.tmpPath)
+                        if (wasRunning) {
+                            BackendPrefs.setUserStopped(this@ProotService, false)
+                            startMaiBot(p.binPath, p.homePath, p.tmpPath, p.ubuntuPath, uvIndex, cols, rows)
+                        }
+                        done.complete(count)
+                    } catch (e: Exception) {
+                        done.completeExceptionally(e)
+                    }
+                }
+                return done.await()
             }
         }
     }
@@ -749,8 +885,11 @@ class ProotService : Service() {
         terminateOrphanDaemonProcesses()
         cleanupStaleRuntimeArtifacts(ubuntuPath, tmpPath)
     }
+
     override fun onDestroy() {
         commandChannel.close()
+        mcpServer?.stop()
+        mcpServer = null
         val activeProcess = maibotProcess
         if (activeProcess != null) {
             runBlocking(Dispatchers.IO) {
@@ -865,6 +1004,12 @@ class ProotService : Service() {
             private set
         @Volatile
         private var currentPid: Long = -1L
+
+        fun getPidSnapshot(): Long = currentPid
+
+        fun getRestartCountSnapshot(): Int = restartCount
+
+        fun snapshotHistory(): ByteArray = historyBuffer.snapshot()
 
         private fun extractPid(p: Process): Long {
             return try {
