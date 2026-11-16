@@ -52,12 +52,9 @@ dart_code_linter:
     - avoid-unrelated-type-assertions
     - avoid-unused-parameters
     - no-boolean-literal-compare
-    - no-equal-arguments
     - no-equal-then-else
     # Flutter lifecycle & performance
     - always-remove-listener
     - avoid-unnecessary-setstate
-    - prefer-const-border-radius
-    - prefer-correct-edge-insets-constructor
     - prefer-define-hero-tag
     - use-setstate-synchronously

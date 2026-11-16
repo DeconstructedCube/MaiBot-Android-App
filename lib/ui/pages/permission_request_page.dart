@@ -76,6 +76,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
 
   Future<void> _requestNotificationPermission() async {
     final status = await Permission.notification.request();
+    if (!mounted) return;
     if (status.isGranted) {
       setState(() => _notificationGranted = true);
     } else if (status.isPermanentlyDenied) {
@@ -86,6 +87,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
 
   Future<void> _requestStoragePermission() async {
     var status = await Permission.manageExternalStorage.request();
+    if (!mounted) return;
     if (status.isGranted) {
       setState(() => _storageGranted = true);
       await _checkAllPermissions();
@@ -93,6 +95,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
     }
 
     var normalStorage = await Permission.storage.request();
+    if (!mounted) return;
     if (normalStorage.isGranted) {
       setState(() => _storageGranted = true);
     } else if (normalStorage.isPermanentlyDenied || status.isPermanentlyDenied) {
@@ -103,6 +106,7 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
 
   Future<void> _requestBatteryOptimization() async {
     final status = await Permission.ignoreBatteryOptimizations.request();
+    if (!mounted) return;
     if (status.isGranted) {
       setState(() => _batteryOptimizationIgnored = true);
     }

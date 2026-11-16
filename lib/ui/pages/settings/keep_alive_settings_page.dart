@@ -225,10 +225,12 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
         backgroundColor: Colors.orange,
         colorText: Colors.white,
       );
-      setState(() {
-        _shizukuAvailable = false;
-        _shizukuPermissionGranted = false;
-      });
+      if (mounted) {
+        setState(() {
+          _shizukuAvailable = false;
+          _shizukuPermissionGranted = false;
+        });
+      }
       return false;
     }
 
@@ -243,17 +245,21 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
           backgroundColor: Colors.red,
           colorText: Colors.white,
         );
-        setState(() {
-          _shizukuPermissionGranted = false;
-        });
+        if (mounted) {
+          setState(() {
+            _shizukuPermissionGranted = false;
+          });
+        }
         return false;
       }
       hasPermission = await _shizukuApi.checkPermission() ?? false;
     }
-    setState(() {
-      _shizukuAvailable = true;
-      _shizukuPermissionGranted = hasPermission;
-    });
+    if (mounted) {
+      setState(() {
+        _shizukuAvailable = true;
+        _shizukuPermissionGranted = hasPermission;
+      });
+    }
     return hasPermission;
   }
 
