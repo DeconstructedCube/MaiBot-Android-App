@@ -345,12 +345,11 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       setHideFromRecents(true);
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (privacySetting.get() == true) {
-        await startBootstrapSequence();
+        unawaited(startBootstrapSequence());
       }
     });
-
     WidgetsBinding.instance.addObserver(this);
   }
 

@@ -58,7 +58,7 @@ jobs:
       - name: Run Dart Code Linter
         run: |
           dart pub global activate dart_code_linter
-          dart pub global run dart_code_linter:metrics analyze lib --no-fatal-warnings
+          dart pub global run dart_code_linter:metrics analyze lib
 
       - name: Run unit tests
         run: flutter test

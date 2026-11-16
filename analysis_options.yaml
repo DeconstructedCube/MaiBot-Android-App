@@ -16,22 +16,23 @@ analyzer:
     - android/**
 
 linter:
-  # The lint rules applied to this project can be customized in the
-  # section below to disable rules from the `package:flutter_lints/flutter.yaml`
-  # included above or to enable additional rules.
   rules:
-    # avoid_print: false
-    # prefer_single_quotes: true
+    always_declare_return_types: true
+    cancel_subscriptions: true
+    close_sinks: true
+    no_adjacent_strings_in_list: true
+    throw_in_finally: true
+    unawaited_futures: true
+    unnecessary_statements: true
 
 dart_code_linter:
   metrics:
-    cyclomatic-complexity: 20
-    maximum-nesting-level: 5
-    number-of-parameters: 4
-    source-lines-of-code: 50
-    lines-of-code: 100
-    maintainability-index: 50
-    weight-of-class: 0.33
+    cyclomatic-complexity: 25
+    maximum-nesting-level: 6
+    number-of-parameters: 6
+    lines-of-code: 160
+    source-lines-of-code: 140
+    maintainability-index: 30
   metrics-exclude:
     - packages/**
     - test/**
@@ -39,18 +40,24 @@ dart_code_linter:
     - packages/**
     - test/**
   rules:
-    - avoid-dynamic
+    # Correctness & bug prevention
+    - avoid-cascade-after-if-null
+    - avoid-collection-methods-with-unrelated-types
+    - avoid-duplicate-exports
     - avoid-passing-async-when-sync-expected
     - avoid-redundant-async
+    - avoid-throw-in-catch-block
     - avoid-unnecessary-type-assertions
     - avoid-unnecessary-type-casts
     - avoid-unrelated-type-assertions
     - avoid-unused-parameters
-    - avoid-nested-conditional-expressions
     - no-boolean-literal-compare
-    - no-empty-block
-    - prefer-conditional-expressions
-    - prefer-correct-type-name
-    - prefer-first
-    - prefer-last
-    - prefer-trailing-comma
+    - no-equal-arguments
+    - no-equal-then-else
+    # Flutter lifecycle & performance
+    - always-remove-listener
+    - avoid-unnecessary-setstate
+    - prefer-const-border-radius
+    - prefer-correct-edge-insets-constructor
+    - prefer-define-hero-tag
+    - use-setstate-synchronously
