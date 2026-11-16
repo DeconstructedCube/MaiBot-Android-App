@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:settings/settings.dart';
+import '../../core/storage/app_settings.dart';
 import '../pages/privacy_agree_page.dart';
 import '../pages/terminal/terminal_page.dart';
 import '../pages/webview/webview_page.dart';

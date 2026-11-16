@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
+import '../../../core/utils/app_log.dart';
+import '../../../core/utils/runtime_envir.dart';
 
 import '../../../core/constants/scripts.dart' as scripts;
 import '../../../core/services/backend_process_manager.dart';

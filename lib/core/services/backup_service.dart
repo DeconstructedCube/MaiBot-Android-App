@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../utils/app_log.dart';
+import '../utils/runtime_envir.dart';
 import '../constants/scripts.dart' as scripts;
 import 'backend_process_manager.dart';
 import '../utils/file_utils.dart';

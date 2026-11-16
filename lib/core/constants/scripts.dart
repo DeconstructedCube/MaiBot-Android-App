@@ -1,4 +1,4 @@
-import 'package:global_repository/global_repository.dart';
+import '../utils/runtime_envir.dart';
 import '../config/app_config.dart';
 
 // ubuntu path (保持原有路径结构，但不再使用 proot-distro)

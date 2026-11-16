@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import 'package:settings/settings.dart';
+import '../../core/storage/app_settings.dart';
 
 import '../routes/app_routes.dart';
 

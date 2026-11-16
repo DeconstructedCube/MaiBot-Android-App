@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:global_repository/global_repository.dart';
+import 'package:maibot_android/core/utils/runtime_envir.dart';
 import 'package:maibot_android/core/services/proot_runner.dart';
 import 'package:maibot_android/ui/controllers/terminal_tab_manager.dart';
 

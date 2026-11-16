@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
-import 'package:settings/settings.dart';
+import '../../core/storage/app_settings.dart';
 
 /// 预设主题种子色彩定义 (包含 Material You 动态色彩项)
 class AppThemeColor {

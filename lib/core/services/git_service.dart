@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:global_repository/global_repository.dart';
+import '../utils/runtime_envir.dart';
 
 import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;

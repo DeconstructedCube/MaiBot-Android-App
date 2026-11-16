@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
+import '../../core/utils/app_log.dart';
+import '../../core/utils/runtime_envir.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../../core/services/proot_runner.dart';

@@ -2,11 +2,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
-import 'package:settings/settings.dart';
 import 'dart:async';
 
 import 'core/config/app_config.dart';
+import 'core/storage/app_settings.dart';
+import 'core/utils/runtime_envir.dart';
 import 'core/services/env_bootstrapper.dart';
 import 'core/services/backend_process_manager.dart';
 import 'ui/routes/app_routes.dart';
@@ -69,13 +69,6 @@ class MaiBot extends StatelessWidget {
                 ? AppRoutes.terminal
                 : AppRoutes.privacy,
             onGenerateRoute: AppRoutes.onGenerateRoute,
-            builder: (context, child) {
-              return ViewMetric(
-                uiWidth: 375,
-                screenWidth: MediaQuery.of(context).size.width,
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
           );
         });
       },

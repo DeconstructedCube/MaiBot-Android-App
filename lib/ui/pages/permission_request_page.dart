@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+import '../../core/utils/app_log.dart';
 
 class PermissionRequestPage extends StatefulWidget {
   final VoidCallback onPermissionsGranted;

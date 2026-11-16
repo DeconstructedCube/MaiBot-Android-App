@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
-import 'package:settings/settings.dart';
+import '../../../../core/storage/app_settings.dart';
+import '../../../../core/utils/app_log.dart';
 
 // 显示自定义 Git Clone 对话框
 Future<void> showCustomGitCloneDialog() async {

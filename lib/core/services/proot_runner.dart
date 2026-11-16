@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:global_repository/global_repository.dart';
+import '../utils/app_log.dart';
+import '../utils/runtime_envir.dart';
 import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
 import '../utils/file_utils.dart';

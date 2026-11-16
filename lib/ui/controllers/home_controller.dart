@@ -5,8 +5,9 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:global_repository/global_repository.dart';
-import 'package:settings/settings.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../../core/storage/app_settings.dart';
+import '../../core/utils/app_log.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../core/config/app_config.dart';

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:global_repository/global_repository.dart';
+import '../utils/runtime_envir.dart';
 
 import '../constants/scripts.dart' as scripts;
 import '../utils/file_utils.dart';
