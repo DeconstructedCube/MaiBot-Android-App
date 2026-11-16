@@ -10,6 +10,7 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
 
   await showAppDialog<void>(
     builder: (dialogCtx) => AlertDialog(
+      icon: const Icon(Icons.add_link_rounded, size: 28),
       title: const Text('添加自定义 WebView'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -115,6 +116,7 @@ Future<void> showEditWebViewDialog(
 
   await showAppDialog<void>(
     builder: (dialogCtx) => AlertDialog(
+      icon: const Icon(Icons.edit_rounded, size: 28),
       title: const Text('编辑自定义 WebView'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
