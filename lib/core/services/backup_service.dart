@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../utils/app_dialog.dart';
 import '../utils/app_log.dart';
 import '../utils/runtime_envir.dart';
 import '../constants/scripts.dart' as scripts;
@@ -230,44 +231,42 @@ class BackupService {
     final canCloseDialog = false.obs;
     if (showLoadingDialog) {
       unawaited(
-        Get.dialog(
-          Builder(
-            builder: (ctx) {
-              dialogContext = ctx;
-              if (dialogDismissed) {
-                canCloseDialog.value = true;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (ctx.mounted) {
-                    Navigator.of(ctx).pop();
-                  }
-                });
-              }
-              return Obx(
-                () => PopScope(
-                  canPop: canCloseDialog.value,
-                  child: const Center(
-                    child: Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.all(Radius.circular(16)),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.all(24.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('正在打包备份数据...', style: TextStyle(fontSize: 14)),
-                          ],
-                        ),
+        showAppDialog<void>(
+          barrierDismissible: false,
+          builder: (ctx) {
+            dialogContext = ctx;
+            if (dialogDismissed) {
+              canCloseDialog.value = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop();
+                }
+              });
+            }
+            return Obx(
+              () => PopScope(
+                canPop: canCloseDialog.value,
+                child: const Center(
+                  child: Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(16)),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('正在打包备份数据...', style: TextStyle(fontSize: 14)),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-          barrierDismissible: false,
+              ),
+            );
+          },
         ),
       );
     }

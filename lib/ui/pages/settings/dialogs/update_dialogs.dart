@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/utils/app_dialog.dart';
 import '../../../../core/utils/version_utils.dart';
 
 /// 检查应用更新并展示更新/下载源对话框
@@ -36,21 +37,19 @@ class UpdateChecker {
 
       // 显示加载提示
       unawaited(
-        Get.dialog(
-          Builder(
-            builder: (ctx) {
-              loadingDialogContext = ctx;
-              if (dialogDismissed) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (ctx.mounted) {
-                    Navigator.of(ctx).pop();
-                  }
-                });
-              }
-              return const Center(child: CircularProgressIndicator());
-            },
-          ),
+        showAppDialog<void>(
           barrierDismissible: false,
+          builder: (ctx) {
+            loadingDialogContext = ctx;
+            if (dialogDismissed) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop();
+                }
+              });
+            }
+            return const Center(child: CircularProgressIndicator());
+          },
         ),
       );
       // 获取当前版本
@@ -149,9 +148,8 @@ class UpdateChecker {
   // 显示更新对话框
   void _showUpdateDialog(
       String version, String releaseNotes, Map<String, dynamic> releaseData) {
-    Get.dialog(
-      Builder(
-        builder: (context) {
+    showAppDialog<void>(
+      builder: (context) {
           final theme = Theme.of(context);
           final colorScheme = theme.colorScheme;
 
@@ -186,7 +184,7 @@ class UpdateChecker {
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
-                          onPressed: () => Get.back(),
+                          onPressed: () => Navigator.of(context).pop(),
                         ),
                       ],
                     ),
@@ -214,13 +212,13 @@ class UpdateChecker {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
-                          onPressed: () => Get.back(),
+                          onPressed: () => Navigator.of(context).pop(),
                           child: const Text('稍后再说'),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: () {
-                            Get.back();
+                            Navigator.of(context).pop();
                             _showDownloadSourceDialog(releaseData);
                           },
                           child: const Text('去下载'),
@@ -232,8 +230,7 @@ class UpdateChecker {
               ),
             ),
           );
-        },
-      ),
+      },
     );
   }
 
@@ -297,9 +294,8 @@ class UpdateChecker {
       },
     ];
 
-    Get.dialog(
-      Builder(
-        builder: (context) {
+    showAppDialog<void>(
+      builder: (context) {
           final theme = Theme.of(context);
           final colorScheme = theme.colorScheme;
 
@@ -340,7 +336,9 @@ class UpdateChecker {
 
                         if (await canLaunchUrl(uri)) {
                           await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          Get.back();
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                          }
                         } else {
                           Get.snackbar(
                             '打开失败',
@@ -358,13 +356,12 @@ class UpdateChecker {
             ),
             actions: [
               TextButton(
-                onPressed: () => Get.back(),
+                onPressed: () => Navigator.of(context).pop(),
                 child: const Text('取消'),
               ),
             ],
           );
-        },
-      ),
+      },
     );
   }
 }

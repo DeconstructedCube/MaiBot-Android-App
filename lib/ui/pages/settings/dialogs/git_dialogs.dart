@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
-
 import '../../../../core/services/backend_process_manager.dart';
 import '../../../../core/services/git_service.dart';
+import '../../../../core/utils/app_dialog.dart';
 
 /// 统一执行 Git 操作并展示流式日志的弹窗
 Future<bool> _runGitTaskWithProgressDialog({
@@ -64,9 +64,9 @@ Future<bool> _runGitTaskWithProgressDialog({
 
   execute();
 
-  final result = await Get.dialog<bool>(
-    Builder(
-      builder: (context) {
+  final result = await showAppDialog<bool>(
+    barrierDismissible: false,
+    builder: (context) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
 
@@ -188,8 +188,6 @@ Future<bool> _runGitTaskWithProgressDialog({
           ),
         );
       },
-    ),
-    barrierDismissible: false,
   );
   isDialogDisposed = true;
   unawaited(Future.delayed(const Duration(milliseconds: 400), scrollController.dispose));
@@ -209,8 +207,8 @@ Future<void> showUpdateMaiBotDialog() async {
     return;
   }
 
-  final confirm = await Get.dialog<bool>(
-    AlertDialog(
+  final confirm = await showAppDialog<bool>(
+    builder: (dialogCtx) => AlertDialog(
       icon: const Icon(Icons.cloud_sync_rounded, size: 28, color: Colors.blue),
       title: const Text('更新 MaiBot'),
       content: const Text(
@@ -221,11 +219,11 @@ Future<void> showUpdateMaiBotDialog() async {
       ),
       actions: [
         TextButton(
-          onPressed: () => Get.back(result: false),
+          onPressed: () => Navigator.of(dialogCtx).pop(false),
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Get.back(result: true),
+          onPressed: () => Navigator.of(dialogCtx).pop(true),
           child: const Text('开始更新'),
         ),
       ],
@@ -260,8 +258,8 @@ Future<void> showSwitchBranchDialog() async {
   String selectedBranch = 'main';
   final customBranchController = TextEditingController();
 
-  final choice = await Get.dialog<String>(
-    StatefulBuilder(
+  final choice = await showAppDialog<String>(
+    builder: (dialogCtx) => StatefulBuilder(
       builder: (context, setState) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
@@ -452,8 +450,8 @@ Future<void> showSwitchReleaseTagDialog() async {
   bool hasRequested = false;
   String selectedTag = '';
 
-  final choice = await Get.dialog<String>(
-    StatefulBuilder(
+  final choice = await showAppDialog<String>(
+    builder: (dialogCtx) => StatefulBuilder(
       builder: (context, setState) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;

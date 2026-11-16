@@ -72,97 +72,130 @@ class TokenAndWebviewCard extends StatelessWidget {
         ? '临时密码'
         : (tokenSource == 'configured' ? '固定密码' : '');
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: iconColor, size: 22),
-      ),
-      title: Row(
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          if (sourceTag.isNotEmpty) ...[
-            const SizedBox(width: 8),
+    return InkWell(
+      onTap: hasToken
+          ? () => _copyToken(title, token)
+          : () => unawaited(homeController.reloadTokensFromDisk()),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(6),
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                sourceTag,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSecondaryContainer,
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      if (sourceTag.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            sourceTag,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasToken ? tokenDisplay : '未检测到 Token（读取自 host/webui.json）',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hasToken
+                          ? colorScheme.onSurface
+                          : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      fontFamily: hasToken ? 'monospace' : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.refresh_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: '从 host/webui.json 重新读取',
+                  onPressed: () {
+                    unawaited(() async {
+                      final ok = await homeController.reloadTokensFromDisk();
+                      Get.snackbar(
+                        ok ? '已刷新' : '未读取到 Token',
+                        ok
+                            ? '已从 webui.json 更新密钥'
+                            : '尚未生成或未找到 webui.json 中的 access_token',
+                        snackPosition: SnackPosition.BOTTOM,
+                        duration: const Duration(seconds: 2),
+                      );
+                    }());
+                  },
                 ),
-              ),
+                if (hasToken) ...[
+                  const SizedBox(width: 4),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    icon: const Icon(Icons.copy_rounded, size: 14),
+                    label: const Text('复制', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _copyToken(title, token),
+                  ),
+                ],
+              ],
             ),
           ],
-        ],
-      ),
-      subtitle: Text(
-        hasToken ? tokenDisplay : '未检测到 Token（读取自 host/webui.json）',
-        style: TextStyle(
-          fontSize: 12,
-          color: hasToken
-              ? colorScheme.onSurface
-              : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-          fontFamily: hasToken ? 'monospace' : null,
         ),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              Icons.refresh_rounded,
-              size: 18,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            tooltip: '从 host/webui.json 重新读取',
-            onPressed: () {
-              unawaited(() async {
-                final ok = await homeController.reloadTokensFromDisk();
-                Get.snackbar(
-                  ok ? '已刷新' : '未读取到 Token',
-                  ok
-                      ? '已从 webui.json 更新密钥'
-                      : '尚未生成或未找到 webui.json 中的 access_token',
-                  snackPosition: SnackPosition.BOTTOM,
-                  duration: const Duration(seconds: 2),
-                );
-              }());
-            },
-          ),
-          if (hasToken)
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              icon: const Icon(Icons.copy_rounded, size: 14),
-              label: const Text('复制', style: TextStyle(fontSize: 12)),
-              onPressed: () => _copyToken(title, token),
-            ),
-        ],
-      ),
-      onTap: hasToken ? () => _copyToken(title, token) : () => unawaited(homeController.reloadTokensFromDisk()),
     );
   }
 

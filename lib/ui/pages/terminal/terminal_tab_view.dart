@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:xterm/xterm.dart';
 
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../controllers/home_controller.dart';
 import '../../controllers/terminal_tab_manager.dart';
@@ -303,19 +304,20 @@ class _TerminalTabViewState extends State<TerminalTabView> {
 
   /// 显示关闭确认对话框
   void _showCloseConfirmDialog(int index, TerminalTabManager manager) {
-    Get.dialog(
-      AlertDialog(
+    showAppDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
         icon: const Icon(Icons.warning_amber_rounded, size: 28),
         title: const Text('确认关闭终端'),
         content: const Text('关闭该系统终端将终止其正在运行的进程，是否继续？'),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () {
-              Get.back();
+              Navigator.of(dialogCtx).pop();
               manager.closeTab(index);
             },
             child: const Text('确定关闭'),

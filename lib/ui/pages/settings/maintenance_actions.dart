@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/app_log.dart';
 import '../../../core/utils/runtime_envir.dart';
 
@@ -15,22 +16,22 @@ class MaintenanceActions {
   /// 更新或重装 MaiBot：删除 MaiBot 目录后退出应用
   static Future<void> reinstallMaiBot() async {
     // 询问是否需要备份
-    final backupChoice = await Get.dialog<String>(
-      AlertDialog(
+    final backupChoice = await showAppDialog<String>(
+      builder: (dialogCtx) => AlertDialog(
         icon: const Icon(Icons.warning_amber_rounded, size: 28, color: Colors.orange),
         title: const Text('重新安装 MaiBot'),
         content: const Text('重新安装将删除当前 MaiBot 的程序与数据。\n是否需要在重装前备份数据？'),
         actions: [
           TextButton(
-            onPressed: () => Get.back(result: 'cancel'),
+            onPressed: () => Navigator.of(dialogCtx).pop('cancel'),
             child: const Text('取消'),
           ),
           OutlinedButton(
-            onPressed: () => Get.back(result: 'no_backup'),
+            onPressed: () => Navigator.of(dialogCtx).pop('no_backup'),
             child: const Text('直接重装'),
           ),
           FilledButton(
-            onPressed: () => Get.back(result: 'backup'),
+            onPressed: () => Navigator.of(dialogCtx).pop('backup'),
             child: const Text('备份后重装'),
           ),
         ],
@@ -49,17 +50,17 @@ class MaintenanceActions {
       );
 
       if (!backupSuccess) {
-        final continueAnyway = await Get.dialog<bool>(
-          AlertDialog(
+        final continueAnyway = await showAppDialog<bool>(
+          builder: (dialogCtx) => AlertDialog(
             title: const Text('备份未完成'),
             content: const Text('数据备份失败，是否仍要继续重新安装？'),
             actions: [
               TextButton(
-                onPressed: () => Get.back(result: false),
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
                 child: const Text('取消'),
               ),
               TextButton(
-                onPressed: () => Get.back(result: true),
+                onPressed: () => Navigator.of(dialogCtx).pop(true),
                 child: const Text('继续重装', style: TextStyle(color: Colors.red)),
               ),
             ],
@@ -75,18 +76,18 @@ class MaintenanceActions {
     }
 
     // 最终确认
-    final finalConfirm = await Get.dialog<bool>(
-      AlertDialog(
+    final finalConfirm = await showAppDialog<bool>(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('确认重新安装'),
         content: const Text('确定要删除 MaiBot 并重新安装吗？\n未备份的数据将无法恢复。'),
         actions: [
           TextButton(
-            onPressed: () => Get.back(result: false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
             child: const Text('取消'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Get.back(result: true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('确定重装'),
           ),
         ],
@@ -137,8 +138,8 @@ class MaintenanceActions {
 
   /// 重置 Python 环境：删除虚拟环境后退出应用
   static Future<void> resetPythonEnv() async {
-    final confirmed = await Get.dialog<bool>(
-      AlertDialog(
+    final confirmed = await showAppDialog<bool>(
+      builder: (dialogCtx) => AlertDialog(
         icon: const Icon(Icons.restart_alt_rounded, size: 28, color: Colors.orange),
         title: const Text('确认重置 Python 环境'),
         content: const Text(
@@ -148,11 +149,11 @@ class MaintenanceActions {
         ),
         actions: [
           TextButton(
-            onPressed: () => Get.back(result: false),
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Get.back(result: true),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('确定重置'),
           ),
         ],
@@ -202,24 +203,22 @@ class MaintenanceActions {
   /// 统一退出应用流程
   static Future<void> performExit({bool showConfirmation = true}) async {
     if (showConfirmation) {
-      final confirm = await Get.dialog<bool>(
-        Builder(
-          builder: (dialogCtx) => AlertDialog(
-            icon: const Icon(Icons.power_settings_new_rounded, size: 28, color: Colors.redAccent),
-            title: const Text('确认退出应用'),
-            content: const Text('退出应用将停止后台运行的服务与容器环境，确定要退出吗？'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogCtx).pop(false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-                onPressed: () => Navigator.of(dialogCtx).pop(true),
-                child: const Text('退出应用'),
-              ),
-            ],
-          ),
+      final confirm = await showAppDialog<bool>(
+        builder: (dialogCtx) => AlertDialog(
+          icon: const Icon(Icons.power_settings_new_rounded, size: 28, color: Colors.redAccent),
+          title: const Text('确认退出应用'),
+          content: const Text('退出应用将停止后台运行的服务与容器环境，确定要退出吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('退出应用'),
+            ),
+          ],
         ),
       );
 
@@ -228,31 +227,29 @@ class MaintenanceActions {
 
     BuildContext? loadingCtx;
     unawaited(
-      Get.dialog(
-        Builder(
-          builder: (ctx) {
-            loadingCtx = ctx;
-            return const PopScope(
-              canPop: false,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('正在停止后台服务并退出...', style: TextStyle(fontSize: 14)),
-                      ],
-                    ),
+      showAppDialog<void>(
+        barrierDismissible: false,
+        builder: (ctx) {
+          loadingCtx = ctx;
+          return const PopScope(
+            canPop: false,
+            child: Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('正在停止后台服务并退出...', style: TextStyle(fontSize: 14)),
+                    ],
                   ),
                 ),
               ),
-            );
-          },
-        ),
-        barrierDismissible: false,
+            ),
+          );
+        },
       ),
     );
 

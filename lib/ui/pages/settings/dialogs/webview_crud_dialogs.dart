@@ -1,17 +1,15 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
-
+import '../../../../core/utils/app_dialog.dart';
 import '../../../controllers/webview_controller.dart';
-
 // 显示添加自定义 WebView 对话框
 Future<void> showAddWebViewDialog(WebviewController controller) async {
   final titleController = TextEditingController();
   final urlController = TextEditingController();
 
-  await Get.dialog(
-    AlertDialog(
-      icon: const Icon(Icons.add_link_rounded, size: 28),
+  await showAppDialog<void>(
+    builder: (dialogCtx) => AlertDialog(
       title: const Text('添加自定义 WebView'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -38,7 +36,7 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Get.back(), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('取消')),
         FilledButton(
           onPressed: () {
             final title = titleController.text.trim();
@@ -82,7 +80,7 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
               return;
             }
             controller.addCustomWebView(title, url);
-            Get.back();
+            Navigator.of(dialogCtx).pop();
 
             Get.snackbar(
               '添加成功',
@@ -115,9 +113,8 @@ Future<void> showEditWebViewDialog(
 
   final urlController = TextEditingController(text: displayUrl);
 
-  await Get.dialog(
-    AlertDialog(
-      icon: const Icon(Icons.edit_rounded, size: 28),
+  await showAppDialog<void>(
+    builder: (dialogCtx) => AlertDialog(
       title: const Text('编辑自定义 WebView'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -142,7 +139,7 @@ Future<void> showEditWebViewDialog(
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Get.back(), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('取消')),
         FilledButton(
           onPressed: () {
             final title = titleController.text.trim();
@@ -189,7 +186,7 @@ Future<void> showEditWebViewDialog(
               return;
             }
             controller.updateCustomWebView(index, title, url);
-            Get.back();
+            Navigator.of(dialogCtx).pop();
 
             Get.snackbar(
               '更新成功',
@@ -210,18 +207,18 @@ Future<void> showEditWebViewDialog(
 // 确认删除自定义 WebView
 void showConfirmDeleteWebView(
     WebviewController controller, int index, String title) {
-  Get.dialog(
-    AlertDialog(
+  showAppDialog<void>(
+    builder: (dialogCtx) => AlertDialog(
       icon: const Icon(Icons.delete_outline_rounded, size: 28, color: Colors.red),
       title: const Text('确认删除'),
       content: Text('确定要删除自定义 WebView "$title" 吗？'),
       actions: [
-        TextButton(onPressed: () => Get.back(), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('取消')),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: Colors.red),
           onPressed: () {
             controller.removeCustomWebView(index);
-            Get.back();
+            Navigator.of(dialogCtx).pop();
 
             Get.snackbar(
               '删除成功',

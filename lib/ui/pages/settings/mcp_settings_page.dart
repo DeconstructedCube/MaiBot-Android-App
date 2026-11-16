@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/runtime_envir.dart';
 
 import '../../../core/config/app_config.dart';
@@ -145,8 +146,9 @@ class _McpSettingsPageState extends State<McpSettingsPage> {
 
   Future<void> _editPortDialog() async {
     final ctrl = TextEditingController(text: _port.toString());
-    final confirmed = await Get.dialog<int>(
-      AlertDialog(
+    final confirmed = await showAppDialog<int>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('设置 MCP 监听端口'),
         content: TextField(
           controller: ctrl,
@@ -158,7 +160,7 @@ class _McpSettingsPageState extends State<McpSettingsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
@@ -168,7 +170,7 @@ class _McpSettingsPageState extends State<McpSettingsPage> {
                 Get.snackbar('端口无效', '请输入 1024 到 65535 之间的端口', snackPosition: SnackPosition.BOTTOM);
                 return;
               }
-              Get.back(result: parsed);
+              Navigator.of(dialogCtx).pop(parsed);
             },
             child: const Text('保存'),
           ),
@@ -244,22 +246,51 @@ class _McpSettingsPageState extends State<McpSettingsPage> {
                     ),
                   ),
                   const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading: const Icon(Icons.key_rounded, size: 22),
-                    title: const Text('Bearer Token', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    subtitle: Text(
-                      _token.length > 20 ? '${_token.substring(0, 16)}••••' : _token,
-                      style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: colorScheme.onSurfaceVariant),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
                       children: [
+                        const Icon(Icons.key_rounded, size: 22),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Bearer Token',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _token.length > 20 ? '${_token.substring(0, 16)}••••' : _token,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         IconButton(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          padding: EdgeInsets.zero,
                           icon: const Icon(Icons.refresh_rounded, size: 19),
                           tooltip: '重置 Token',
                           onPressed: () => unawaited(_resetToken()),
                         ),
+                        const SizedBox(width: 4),
                         OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
                           onPressed: () {
                             unawaited(() async {
                               await Clipboard.setData(ClipboardData(text: _token));

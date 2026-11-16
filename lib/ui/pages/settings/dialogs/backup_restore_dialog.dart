@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 
 import '../../../../core/services/backend_process_manager.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../../core/utils/app_dialog.dart';
 import '../../../controllers/home_controller.dart';
 
 /// 显示 Material You 风格的备份恢复选择对话框
@@ -30,8 +31,9 @@ Future<void> showBackupRestoreDialog({
   bool restorePlugins = true;
   bool isRestoring = false;
 
-  await Get.dialog(
-    StatefulBuilder(
+  await showAppDialog<void>(
+    barrierDismissible: false,
+    builder: (context) => StatefulBuilder(
       builder: (context, setState) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
@@ -481,6 +483,5 @@ Future<void> showBackupRestoreDialog({
         );
       },
     ),
-    barrierDismissible: false,
   );
 }

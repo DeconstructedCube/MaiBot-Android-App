@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 import '../../../../core/storage/app_settings.dart';
+import '../../../../core/utils/app_dialog.dart';
 import '../../../../core/utils/app_log.dart';
 
 // 显示自定义 Git Clone 对话框
@@ -12,9 +13,8 @@ Future<void> showCustomGitCloneDialog() async {
   // 显示编辑对话框
   final commandController = TextEditingController(text: currentCommand);
 
-  final result = await Get.dialog<bool>(
-    Builder(
-      builder: (context) {
+  final result = await showAppDialog<bool>(
+    builder: (context) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
 
@@ -51,17 +51,16 @@ Future<void> showCustomGitCloneDialog() async {
           ),
           actions: [
             TextButton(
-              onPressed: () => Get.back(result: false),
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('取消'),
             ),
             FilledButton(
-              onPressed: () => Get.back(result: true),
+              onPressed: () => Navigator.of(context).pop(true),
               child: const Text('保存'),
             ),
           ],
         );
       },
-    ),
   );
 
   if (result == true) {

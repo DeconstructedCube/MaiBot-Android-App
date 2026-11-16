@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/utils/app_dialog.dart';
 import '../../core/utils/app_log.dart';
 
 class PermissionRequestPage extends StatefulWidget {
@@ -110,18 +110,19 @@ class _PermissionRequestPageState extends State<PermissionRequestPage> with Widg
   }
 
   void _showOpenSettingsDialog(String title, String content) {
-    Get.dialog(
-      AlertDialog(
+    showAppDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
         title: Text(title),
         content: Text(content),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () {
-              Get.back();
+              Navigator.of(dialogCtx).pop();
               openAppSettings();
             },
             child: const Text('前往设置'),

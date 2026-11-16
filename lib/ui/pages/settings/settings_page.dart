@@ -14,6 +14,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/services/backend_process_manager.dart';
 import '../../../core/services/backup_service.dart';
 import '../../../core/services/host_rescue_service.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/file_utils.dart';
 import '../../../core/utils/version_utils.dart';
 import 'dialogs/update_dialogs.dart';
@@ -87,8 +88,10 @@ class _SettingsPageState extends State<SettingsPage> {
           duration: const Duration(seconds: 2),
         );
       } else {
-        Get.dialog(
-          AlertDialog(
+        if (!mounted) return;
+        await showAppDialog<void>(
+          context: context,
+          builder: (dialogCtx) => AlertDialog(
             title: const Text('打开文件系统'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -129,7 +132,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   unawaited(() async {
                     await Clipboard.setData(
                         ClipboardData(text: scripts.ubuntuPath));
-                    Get.back();
+                    if (dialogCtx.mounted) {
+                      Navigator.of(dialogCtx).pop();
+                    }
                     Get.snackbar(
                       '已复制',
                       '路径已复制到剪贴板',
@@ -141,7 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: const Text('复制路径'),
               ),
               TextButton(
-                onPressed: () => Get.back(),
+                onPressed: () => Navigator.of(dialogCtx).pop(),
                 child: const Text('关闭'),
               ),
             ],
@@ -162,8 +167,9 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showWebUiRescueDialog() {
-    Get.dialog(
-      AlertDialog(
+    showAppDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
         icon: const Icon(Icons.medical_services_rounded, size: 28, color: Colors.deepPurple),
         title: const Text('WebUI 离线急救'),
         content: const Text(
@@ -172,12 +178,12 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
             child: const Text('取消'),
           ),
           OutlinedButton(
             onPressed: () {
-              Get.back();
+              Navigator.of(dialogCtx).pop();
               unawaited(() async {
                 await HostRescueService.repairHostWebUiConfig();
                 homeController.activeWebPort.value = Ports.maibotWeb;
@@ -192,7 +198,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           FilledButton(
             onPressed: () {
-              Get.back();
+              Navigator.of(dialogCtx).pop();
               unawaited(() async {
                 final newToken = await HostRescueService.resetWebUiCredentials();
                 homeController.maiBotWebUiToken.value = newToken;
@@ -608,8 +614,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           _cachedPrivacyContent ??= await rootBundle
                               .loadString('assets/privacy_policy.md');
                           if (context.mounted) {
-                            Get.dialog(
-                              Dialog(
+                            await showAppDialog<void>(
+                              context: context,
+                              builder: (dialogCtx) => Dialog(
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(20)),
                                 child: Column(
@@ -629,7 +636,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                           const Spacer(),
                                           IconButton(
                                             icon: const Icon(Icons.close),
-                                            onPressed: () => Get.back(),
+                                            onPressed: () => Navigator.of(dialogCtx).pop(),
                                           ),
                                         ],
                                       ),
