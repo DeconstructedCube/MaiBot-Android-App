@@ -12,6 +12,46 @@ git config --system --remove-section url."https://ghfast.top/https://github.com/
 git config --global --remove-section url."https://ghfast.top/https://github.com/" 2>/dev/null || true
 git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
 
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
+case "$ORIGIN_URL" in
+    https://ghfast.top/https://github.com/*|https://gh-proxy.com/https://github.com/*|https://mirror.ghproxy.com/https://github.com/*|https://hub.gitmirror.com/https://github.com/*)
+        CLEAN_PATH="${ORIGIN_URL#*https://github.com/}"
+        git remote set-url origin "https://github.com/$CLEAN_PATH" 2>/dev/null || true
+        ORIGIN_URL="https://github.com/$CLEAN_PATH"
+        ;;
+esac
+
+run_git_net() {
+    if [[ "$ORIGIN_URL" != https://github.com/* ]]; then
+        git -c gc.auto=0 "$@"
+        return $?
+    fi
+
+    local raw_mirrors="${MAIBOT_GITHUB_MIRRORS:-}"
+    local -a mirrors=()
+    if [ -n "$raw_mirrors" ]; then
+        IFS='|' read -ra mirrors <<< "$raw_mirrors"
+    elif [ "${MAIBOT_DIRECT_NETWORK:-0}" = "1" ]; then
+        mirrors=("" "https://gh-proxy.com/" "https://mirror.ghproxy.com/" "https://ghfast.top/")
+    else
+        mirrors=("https://gh-proxy.com/" "https://mirror.ghproxy.com/" "https://ghfast.top/" "")
+    fi
+
+    local prefix
+    for prefix in "${mirrors[@]}"; do
+        if [ -z "$prefix" ]; then
+            if git -c gc.auto=0 "$@"; then
+                return 0
+            fi
+        else
+            if git -c gc.auto=0 -c "url.${prefix}https://github.com/.insteadOf=https://github.com/" "$@"; then
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
 sync_uv_if_present() {
     if [ -f /root/.local/bin/uv ]; then
         echo -e "\033[36m[UV]\033[0m 检查 Python 依赖..."
@@ -24,34 +64,38 @@ stash_if_dirty() {
         git stash push -m "maibot-auto-update" 2>/dev/null || true
     fi
 }
+
 case "$ACTION" in
     current_ref)
         git symbolic-ref --short HEAD 2>/dev/null || git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD 2>/dev/null
         ;;
     fetch_branches)
-        git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune 2>/dev/null || \
-        git -c gc.auto=0 fetch --all --prune 2>/dev/null || \
-        git -c gc.auto=0 fetch origin 2>/dev/null || true
+        run_git_net fetch origin "+refs/heads/*:refs/remotes/origin/*" --prune 2>/dev/null || \
+        run_git_net fetch --all --prune 2>/dev/null || \
+        run_git_net fetch origin 2>/dev/null || true
         ;;
     fetch_tags)
-        git -c gc.auto=0 fetch --tags --force origin 2>/dev/null || \
-        git -c gc.auto=0 fetch --tags --prune 2>/dev/null || \
-        git -c gc.auto=0 fetch origin 2>/dev/null || true
+        run_git_net fetch --tags --force origin 2>/dev/null || \
+        run_git_net fetch --tags --prune 2>/dev/null || \
+        run_git_net fetch origin 2>/dev/null || true
         ;;
     pull)
         echo -e "\033[36m[GIT]\033[0m 同步远程分支与标签..."
-        git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" --tags --prune 2>/dev/null || \
-        git -c gc.auto=0 fetch --all --prune 2>/dev/null || true
+        run_git_net fetch origin "+refs/heads/*:refs/remotes/origin/*" --tags --prune 2>/dev/null || \
+        run_git_net fetch --all --prune 2>/dev/null || true
         stash_if_dirty
         echo -e "\033[36m[GIT]\033[0m 拉取最新代码..."
-        git -c gc.auto=0 pull --rebase=false || git -c gc.auto=0 pull --rebase=false origin main || true
+        if ! run_git_net pull --rebase=false; then
+            CURRENT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || echo main)"
+            run_git_net pull --rebase=false origin "$CURRENT_BRANCH"
+        fi
         sync_uv_if_present
         ;;
     switch_branch)
         echo -e "\033[36m[GIT]\033[0m 抓取远程分支 $TARGET..."
-        git -c gc.auto=0 fetch origin "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || \
-        git -c gc.auto=0 fetch origin "$TARGET" 2>/dev/null || \
-        git -c gc.auto=0 fetch origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
+        run_git_net fetch origin "+refs/heads/$TARGET:refs/remotes/origin/$TARGET" 2>/dev/null || \
+        run_git_net fetch origin "$TARGET" 2>/dev/null || \
+        run_git_net fetch origin "+refs/heads/*:refs/remotes/origin/*" 2>/dev/null || true
         stash_if_dirty
         echo -e "\033[36m[GIT]\033[0m 检出分支 $TARGET..."
         if git show-ref --verify --quiet "refs/heads/$TARGET"; then
@@ -65,14 +109,14 @@ case "$ACTION" in
             exit 1
         fi
         echo -e "\033[36m[GIT]\033[0m 同步分支最新提交..."
-        git -c gc.auto=0 pull --rebase=false origin "$TARGET" 2>/dev/null || git -c gc.auto=0 pull --rebase=false 2>/dev/null || true
+        run_git_net pull --rebase=false origin "$TARGET" || run_git_net pull --rebase=false
         sync_uv_if_present
         ;;
     switch_tag)
         echo -e "\033[36m[GIT]\033[0m 抓取标签 $TARGET..."
-        git -c gc.auto=0 fetch --tags --force origin 2>/dev/null || \
-        git -c gc.auto=0 fetch origin "refs/tags/$TARGET:refs/tags/$TARGET" 2>/dev/null || \
-        git -c gc.auto=0 fetch --tags 2>/dev/null || true
+        run_git_net fetch --tags --force origin 2>/dev/null || \
+        run_git_net fetch origin "refs/tags/$TARGET:refs/tags/$TARGET" 2>/dev/null || \
+        run_git_net fetch --tags 2>/dev/null || true
         stash_if_dirty
         echo -e "\033[36m[GIT]\033[0m 检出标签: $TARGET..."
         git -c gc.auto=0 checkout "tags/$TARGET" || git -c gc.auto=0 checkout -f "tags/$TARGET" || git -c gc.auto=0 checkout "$TARGET"

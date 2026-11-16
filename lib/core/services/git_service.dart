@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:global_repository/global_repository.dart';
 
+import '../config/app_config.dart';
 import '../constants/scripts.dart' as scripts;
 import 'proot_runner.dart';
 
@@ -17,6 +19,10 @@ class GitService {
     return gitDir.existsSync();
   }
 
+  static String _shellQuote(String value) {
+    return "'${value.replaceAll("'", "'\\''")}'";
+  }
+
   /// 确保外置的 git_ops.sh 脚本已部署且与随包版本同步到容器内 /usr/local/bin/maibot-git-ops
   static Future<void> _ensureGitOpsScriptDeployed() async {
     final hostScriptFile = File('${scripts.ubuntuPath}$_gitOpsBin');
@@ -29,6 +35,7 @@ class GitService {
         await hostScriptFile.parent.create(recursive: true);
       }
       await hostScriptFile.writeAsString(content);
+      await Process.run('${RuntimeEnvir.binPath}/busybox', ['chmod', '+x', hostScriptFile.path]);
     } catch (_) {}
   }
 
@@ -43,6 +50,9 @@ class GitService {
       onLog: onLog,
       timeout: timeout,
       workingDir: maiBotPath,
+      extraEnv: {
+        'MAIBOT_GITHUB_MIRRORS': MirrorRegistry.activeGithubPrefixMirrors.join('|'),
+      },
     );
   }
 
@@ -173,7 +183,7 @@ class GitService {
 
     onLog?.call('1. 正在从远端精准抓取分支: $branchName (git fetch)...\n');
     return await runInProot(
-      'bash $_gitOpsBin switch_branch "$branchName"',
+      'bash $_gitOpsBin switch_branch ${_shellQuote(branchName)}',
       onLog: onLog,
       timeout: const Duration(minutes: 5),
     );
@@ -197,7 +207,7 @@ class GitService {
 
     onLog?.call('1. 正在从远端拉取 Release Tag: $tagName (git fetch --tags)...\n');
     return await runInProot(
-      'bash $_gitOpsBin switch_tag "$tagName"',
+      'bash $_gitOpsBin switch_tag ${_shellQuote(tagName)}',
       onLog: onLog,
       timeout: const Duration(minutes: 5),
     );

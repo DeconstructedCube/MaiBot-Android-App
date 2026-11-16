@@ -563,7 +563,7 @@ class MainActivity : FragmentActivity() {
 
         return mapOf(
             "cpuPercent" to cpuPercent,
-            "appMemoryMb" to (appProcessMb + containerMemoryMb),
+            "appMemoryMb" to appProcessMb,
             "containerMemoryMb" to containerMemoryMb,
             "processCount" to containerProcessCount,
             "systemAvailMb" to systemAvailMb,

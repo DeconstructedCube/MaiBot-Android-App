@@ -96,50 +96,86 @@ class BackupService {
     }
   }
 
-  /// 探测备份文件内部包含的具体模块（兼容传统根目录布局与 MaiBot 1.4.x `host/` + `bots/<id>/` 多实例布局）
-  static Future<Map<String, bool>> inspectBackupContents(File backupFile) async {
-    final result = {
-      'data': false,
-      'config': false,
-      'plugins': false,
-      'host': false,
-    };
+  static final _botDataRe = RegExp(r'^(MaiBot/bots/[^/]+/data)(?:/|$)');
+  static final _botConfigRe = RegExp(r'^(MaiBot/bots/[^/]+/config)(?:/|$)');
+  static final _botPluginsRe = RegExp(r'^(MaiBot/bots/[^/]+/plugins)(?:/|$)');
 
-    try {
-      final proc = await Process.run('${RuntimeEnvir.binPath}/busybox', [
-        'tar',
-        '-tzf',
-        backupFile.path,
-      ]);
+  static Future<({
+    bool hasData,
+    bool hasConfig,
+    bool hasPlugins,
+    bool hasHost,
+    Set<String> dataTargets,
+    Set<String> configTargets,
+    Set<String> pluginTargets,
+    Set<String> hostTargets,
+  })> _scanArchiveModules(File backupFile) async {
+    final dataTargets = <String>{};
+    final configTargets = <String>{};
+    final pluginTargets = <String>{};
+    final hostTargets = <String>{};
 
-      if (proc.exitCode == 0) {
-        final lines = proc.stdout.toString().split('\n');
-        for (final rawLine in lines) {
-          final line = rawLine.trim();
-          if (line.isEmpty) continue;
-          if (line.startsWith('MaiBot/host/')) {
-            result['host'] = true;
-          }
-          if (line.startsWith('MaiBot/data/') ||
-              RegExp(r'^MaiBot/bots/[^/]+/data/').hasMatch(line)) {
-            result['data'] = true;
-          }
-          if (line.startsWith('MaiBot/config/') ||
-              RegExp(r'^MaiBot/bots/[^/]+/config/').hasMatch(line)) {
-            result['config'] = true;
-          }
-          if (line.startsWith('MaiBot/plugins/') ||
-              RegExp(r'^MaiBot/bots/[^/]+/plugins/').hasMatch(line)) {
-            result['plugins'] = true;
-          }
+    final proc = await Process.run('${RuntimeEnvir.binPath}/busybox', [
+      'tar',
+      '-tzf',
+      backupFile.path,
+    ]);
+
+    if (proc.exitCode == 0) {
+      final lines = proc.stdout.toString().split('\n');
+      for (final rawLine in lines) {
+        final line = rawLine.trim();
+        if (line.isEmpty) continue;
+        if (line.startsWith('MaiBot/host/')) {
+          hostTargets.add('MaiBot/host');
+        }
+        if (line.startsWith('MaiBot/data/')) {
+          dataTargets.add('MaiBot/data');
+        } else {
+          final m = _botDataRe.firstMatch(line);
+          if (m != null) dataTargets.add(m.group(1)!);
+        }
+        if (line.startsWith('MaiBot/config/')) {
+          configTargets.add('MaiBot/config');
+        } else {
+          final m = _botConfigRe.firstMatch(line);
+          if (m != null) configTargets.add(m.group(1)!);
+        }
+        if (line.startsWith('MaiBot/plugins/')) {
+          pluginTargets.add('MaiBot/plugins');
+        } else {
+          final m = _botPluginsRe.firstMatch(line);
+          if (m != null) pluginTargets.add(m.group(1)!);
         }
       }
+    }
+
+    return (
+      hasData: dataTargets.isNotEmpty,
+      hasConfig: configTargets.isNotEmpty,
+      hasPlugins: pluginTargets.isNotEmpty,
+      hasHost: hostTargets.isNotEmpty,
+      dataTargets: dataTargets,
+      configTargets: configTargets,
+      pluginTargets: pluginTargets,
+      hostTargets: hostTargets,
+    );
+  }
+
+  /// 探测备份文件内部包含的具体模块（兼容传统根目录布局与 MaiBot 1.4.x `host/` + `bots/<id>/` 多实例布局）
+  static Future<Map<String, bool>> inspectBackupContents(File backupFile) async {
+    try {
+      final scan = await _scanArchiveModules(backupFile);
+      return {
+        'data': scan.hasData,
+        'config': scan.hasConfig,
+        'plugins': scan.hasPlugins,
+        'host': scan.hasHost,
+      };
     } catch (e) {
       Log.w('解析备份目录结构异常: $e', tag: 'BackupService');
       return {'data': true, 'config': true, 'plugins': true, 'host': true};
     }
-
-    return result;
   }
 
   /// 执行备份操作
@@ -188,6 +224,7 @@ class BackupService {
     final backupPath = '${backupDir.path}/$backupFileName';
 
     BuildContext? dialogContext;
+    bool dialogDismissed = false;
     final canCloseDialog = false.obs;
     if (showLoadingDialog) {
       unawaited(
@@ -195,6 +232,14 @@ class BackupService {
           Builder(
             builder: (ctx) {
               dialogContext = ctx;
+              if (dialogDismissed) {
+                canCloseDialog.value = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (ctx.mounted) {
+                    Navigator.of(ctx).pop();
+                  }
+                });
+              }
               return Obx(
                 () => PopScope(
                   canPop: canCloseDialog.value,
@@ -226,13 +271,13 @@ class BackupService {
     }
 
     void dismissDialog() {
+      if (!showLoadingDialog || dialogDismissed) return;
+      dialogDismissed = true;
       canCloseDialog.value = true;
       final ctx = dialogContext;
       dialogContext = null;
       if (ctx != null && ctx.mounted) {
         Navigator.of(ctx).pop();
-      } else if (Get.isDialogOpen == true) {
-        Get.back(canPop: false);
       }
     }
 
@@ -348,42 +393,13 @@ class BackupService {
       autoRestart: restartService,
       action: () async {
         try {
-          final procList = await Process.run('${RuntimeEnvir.binPath}/busybox', [
-            'tar',
-            '-tzf',
-            backupFile.path,
-          ]);
-          final archiveLines = procList.exitCode == 0
-              ? procList.stdout.toString().split('\n')
-              : <String>[];
-
-          final targetSet = <String>{};
-          final botDataRe = RegExp(r'^(MaiBot/bots/[^/]+/data)(?:/|$)');
-          final botConfigRe = RegExp(r'^(MaiBot/bots/[^/]+/config)(?:/|$)');
-          final botPluginsRe = RegExp(r'^(MaiBot/bots/[^/]+/plugins)(?:/|$)');
-
-          for (final rawLine in archiveLines) {
-            final line = rawLine.trim();
-            if (line.isEmpty) continue;
-            if (restoreConfig && line.startsWith('MaiBot/host/')) {
-              targetSet.add('MaiBot/host');
-            }
-            if (restoreData) {
-              if (line.startsWith('MaiBot/data/')) targetSet.add('MaiBot/data');
-              final m = botDataRe.firstMatch(line);
-              if (m != null) targetSet.add(m.group(1)!);
-            }
-            if (restoreConfig) {
-              if (line.startsWith('MaiBot/config/')) targetSet.add('MaiBot/config');
-              final m = botConfigRe.firstMatch(line);
-              if (m != null) targetSet.add(m.group(1)!);
-            }
-            if (restorePlugins) {
-              if (line.startsWith('MaiBot/plugins/')) targetSet.add('MaiBot/plugins');
-              final m = botPluginsRe.firstMatch(line);
-              if (m != null) targetSet.add(m.group(1)!);
-            }
-          }
+          final scan = await _scanArchiveModules(backupFile);
+          final targetSet = <String>{
+            if (restoreConfig) ...scan.hostTargets,
+            if (restoreData) ...scan.dataTargets,
+            if (restoreConfig) ...scan.configTargets,
+            if (restorePlugins) ...scan.pluginTargets,
+          };
 
           final extractTargets = targetSet.toList();
 

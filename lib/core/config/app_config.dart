@@ -1,7 +1,4 @@
 import 'dart:io';
-
-const bool product = bool.fromEnvironment('dart.vm.product');
-
 class Config {
   // 应用包名
   static const String packageName = 'com.maibot.maibot_android';
@@ -129,12 +126,7 @@ class MirrorRegistry {
       }
     }
 
-    final candidatePrefixes = [
-      '', // 官方源
-      'https://gh-proxy.com/',
-      'https://mirror.ghproxy.com/',
-      'https://ghfast.top/',
-    ];
+    const candidatePrefixes = MirrorRegistry.githubPrefixMirrors;
 
     try {
       final githubResults = await Future.wait(candidatePrefixes.map(testGithubPrefix));

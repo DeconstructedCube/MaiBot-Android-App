@@ -216,12 +216,12 @@ class _ResourceMonitorCardState extends State<ResourceMonitorCard>
                 Expanded(
                   child: _buildMetricBlock(
                     context: context,
-                    label: '应用/容器内存',
+                    label: '应用 / 容器内存',
                     value: _hasSampled
-                        ? '${_formatMb(_appMemoryMb)} (${_formatMb(_containerMemoryMb)})'
+                        ? '${_formatMb(_appMemoryMb)} / ${_formatMb(_containerMemoryMb)}'
                         : '采样中...',
                     ratio: _systemTotalMb > 0
-                        ? (_appMemoryMb / _systemTotalMb).clamp(0.0, 1.0)
+                        ? ((_appMemoryMb + _containerMemoryMb) / _systemTotalMb).clamp(0.0, 1.0)
                         : 0.0,
                     barColor: colorScheme.tertiary,
                   ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 
@@ -69,6 +70,17 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
               );
               return;
             }
+            final isDuplicate = controller.customWebViews.any((wv) => wv['url'] == url);
+            if (isDuplicate) {
+              Get.snackbar(
+                '重复地址',
+                '已存在相同 URL 的自定义 WebView 面板',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.orange,
+                colorText: Colors.white,
+              );
+              return;
+            }
             controller.addCustomWebView(title, url);
             Get.back();
 
@@ -84,8 +96,8 @@ Future<void> showAddWebViewDialog(WebviewController controller) async {
       ],
     ),
   );
-  titleController.dispose();
-  urlController.dispose();
+  unawaited(Future.delayed(const Duration(milliseconds: 400), titleController.dispose));
+  unawaited(Future.delayed(const Duration(milliseconds: 400), urlController.dispose));
 }
 
 // 显示编辑自定义 WebView 对话框
@@ -162,6 +174,20 @@ Future<void> showEditWebViewDialog(
               );
               return;
             }
+            final isDuplicate = controller.customWebViews
+                .asMap()
+                .entries
+                .any((e) => e.key != index && e.value['url'] == url);
+            if (isDuplicate) {
+              Get.snackbar(
+                '重复地址',
+                '已存在相同 URL 的自定义 WebView 面板',
+                snackPosition: SnackPosition.BOTTOM,
+                backgroundColor: Colors.orange,
+                colorText: Colors.white,
+              );
+              return;
+            }
             controller.updateCustomWebView(index, title, url);
             Get.back();
 
@@ -177,8 +203,8 @@ Future<void> showEditWebViewDialog(
       ],
     ),
   );
-  titleController.dispose();
-  urlController.dispose();
+  unawaited(Future.delayed(const Duration(milliseconds: 400), titleController.dispose));
+  unawaited(Future.delayed(const Duration(milliseconds: 400), urlController.dispose));
 }
 
 // 确认删除自定义 WebView

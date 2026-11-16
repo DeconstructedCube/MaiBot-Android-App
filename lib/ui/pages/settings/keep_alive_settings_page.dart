@@ -189,7 +189,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
       final results = await Future.wait([
         _shizukuApi.runCommand('dumpsys deviceidle whitelist'),
         _shizukuApi.runCommand('cmd appops get ${Config.packageName} RUN_ANY_IN_BACKGROUND'),
-        _shizukuApi.runCommand('dumpsys activity settings'),
+        _shizukuApi.runCommand('device_config get activity_manager max_phantom_processes'),
       ]);
 
       final dozeOut = results.first;
@@ -199,8 +199,7 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
       final isRunAnyAllowed = appopsOut != null && appopsOut.toLowerCase().contains('allow');
 
       final phantomOut = results[2];
-      final isPhantomIncreased = phantomOut != null && phantomOut.contains('max_phantom_processes=64');
-
+      final isPhantomIncreased = (int.tryParse(phantomOut?.trim() ?? '') ?? 0) >= 64;
       if (mounted) {
         setState(() {
           _shizukuAvailable = true;
@@ -257,16 +256,28 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
     return hasPermission;
   }
 
+  bool _isShizukuCmdSuccess(String? output) {
+    if (output == null) return false;
+    final lower = output.toLowerCase();
+    return !lower.contains('exception') &&
+        !lower.contains('permission denied') &&
+        !lower.contains('error:');
+  }
+
   Future<void> _toggleDozeWhitelist(bool value) async {
     if (!await _ensureShizukuPermission()) return;
     try {
-      if (value) {
-        await _shizukuApi.runCommand('dumpsys deviceidle whitelist +${Config.packageName}');
-        Get.snackbar('设置成功', '已加入电池优化白名单', snackPosition: SnackPosition.BOTTOM);
-      } else {
-        await _shizukuApi.runCommand('dumpsys deviceidle whitelist -${Config.packageName}');
-        Get.snackbar('设置成功', '已移出电池优化白名单', snackPosition: SnackPosition.BOTTOM);
+      final out = value
+          ? await _shizukuApi.runCommand('dumpsys deviceidle whitelist +${Config.packageName}')
+          : await _shizukuApi.runCommand('dumpsys deviceidle whitelist -${Config.packageName}');
+      if (!_isShizukuCmdSuccess(out)) {
+        throw Exception(out ?? '命令返回为空');
       }
+      Get.snackbar(
+        '设置成功',
+        value ? '已加入电池优化白名单' : '已移出电池优化白名单',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       await _checkShizukuStatus();
     } catch (e) {
       Get.snackbar('执行失败', e.toString(), snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.red, colorText: Colors.white);
@@ -276,15 +287,20 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
   Future<void> _togglePhantomProcess(bool value) async {
     if (!await _ensureShizukuPermission()) return;
     try {
-      if (value) {
-        await _shizukuApi.runCommand('device_config set_sync_disabled_for_tests persistent');
-        await _shizukuApi.runCommand('device_config put activity_manager max_phantom_processes 64');
-        Get.snackbar('设置成功', '已调整幻影进程上限为 64', snackPosition: SnackPosition.BOTTOM);
-      } else {
-        await _shizukuApi.runCommand('device_config set_sync_disabled_for_tests none');
-        await _shizukuApi.runCommand('device_config put activity_manager max_phantom_processes 32');
-        Get.snackbar('设置成功', '已恢复默认幻影进程上限', snackPosition: SnackPosition.BOTTOM);
+      final out1 = await _shizukuApi.runCommand(
+        value ? 'device_config set_sync_disabled_for_tests persistent' : 'device_config set_sync_disabled_for_tests none',
+      );
+      final out2 = await _shizukuApi.runCommand(
+        value ? 'device_config put activity_manager max_phantom_processes 64' : 'device_config put activity_manager max_phantom_processes 32',
+      );
+      if (!_isShizukuCmdSuccess(out1) || !_isShizukuCmdSuccess(out2)) {
+        throw Exception('${out1 ?? ''} ${out2 ?? ''}'.trim());
       }
+      Get.snackbar(
+        '设置成功',
+        value ? '已调整幻影进程上限为 64' : '已恢复默认幻影进程上限',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       await _checkShizukuStatus();
     } catch (e) {
       Get.snackbar('执行失败', e.toString(), snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.red, colorText: Colors.white);
@@ -294,15 +310,17 @@ class _KeepAliveSettingsPageState extends State<KeepAliveSettingsPage> with Widg
   Future<void> _toggleRunAnyInBackground(bool value) async {
     if (!await _ensureShizukuPermission()) return;
     try {
-      if (value) {
-        await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_ANY_IN_BACKGROUND allow');
-        await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_IN_BACKGROUND allow');
-        Get.snackbar('设置成功', '已开启后台无限制运行', snackPosition: SnackPosition.BOTTOM);
-      } else {
-        await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_ANY_IN_BACKGROUND default');
-        await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_IN_BACKGROUND default');
-        Get.snackbar('设置成功', '已恢复默认后台运行策略', snackPosition: SnackPosition.BOTTOM);
+      final mode = value ? 'allow' : 'default';
+      final out1 = await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_ANY_IN_BACKGROUND $mode');
+      final out2 = await _shizukuApi.runCommand('cmd appops set ${Config.packageName} RUN_IN_BACKGROUND $mode');
+      if (!_isShizukuCmdSuccess(out1) || !_isShizukuCmdSuccess(out2)) {
+        throw Exception('${out1 ?? ''} ${out2 ?? ''}'.trim());
       }
+      Get.snackbar(
+        '设置成功',
+        value ? '已开启后台无限制运行' : '已恢复默认后台运行策略',
+        snackPosition: SnackPosition.BOTTOM,
+      );
       await _checkShizukuStatus();
     } catch (e) {
       Get.snackbar('执行失败', e.toString(), snackPosition: SnackPosition.BOTTOM, backgroundColor: Colors.red, colorText: Colors.white);

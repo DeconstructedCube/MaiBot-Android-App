@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 import 'package:global_repository/global_repository.dart';
@@ -89,5 +90,5 @@ Future<void> showCustomGitCloneDialog() async {
     }
   }
 
-  commandController.dispose();
+  unawaited(Future.delayed(const Duration(milliseconds: 400), commandController.dispose));
 }

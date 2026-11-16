@@ -19,13 +19,14 @@ class UpdateChecker {
   /// 检查更新：拉取最新版本、比较版本号并展示相应对话框
   Future<void> checkForUpdates() async {
     BuildContext? loadingDialogContext;
+    bool dialogDismissed = false;
     void dismissLoadingDialog() {
+      if (dialogDismissed) return;
+      dialogDismissed = true;
       final ctx = loadingDialogContext;
       loadingDialogContext = null;
       if (ctx != null && ctx.mounted) {
         Navigator.of(ctx).pop();
-      } else if (Get.isDialogOpen == true) {
-        Get.back(canPop: false);
       }
     }
 
@@ -39,6 +40,13 @@ class UpdateChecker {
           Builder(
             builder: (ctx) {
               loadingDialogContext = ctx;
+              if (dialogDismissed) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (ctx.mounted) {
+                    Navigator.of(ctx).pop();
+                  }
+                });
+              }
               return const Center(child: CircularProgressIndicator());
             },
           ),
@@ -101,13 +109,14 @@ class UpdateChecker {
 
   Future<Map<String, dynamic>?> _fetchLatestReleaseFast(List<String> urls) async {
     if (urls.isEmpty) return null;
+    final client = http.Client();
     final completer = Completer<Map<String, dynamic>?>();
     int remaining = urls.length;
 
     for (final url in urls) {
       unawaited(() async {
         try {
-          final response = await http.get(
+          final response = await client.get(
             Uri.parse(url),
             headers: {'Accept': 'application/vnd.github.v3+json'},
           ).timeout(const Duration(seconds: 5));
@@ -130,7 +139,11 @@ class UpdateChecker {
       }());
     }
 
-    return completer.future;
+    try {
+      return await completer.future;
+    } finally {
+      client.close();
+    }
   }
 
   // 显示更新对话框

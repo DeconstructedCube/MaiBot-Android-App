@@ -33,7 +33,8 @@ class _WebViewPageState extends State<WebViewPage> {
   final HomeController homeController = Get.find<HomeController>();
 
   Worker? _customWebViewsWorker;
-
+  Worker? _entryUrlWorker;
+  String _lastLoadedEntryUrl = '';
   void _switchTab(int newIndex) {
     if (_currentIndex == newIndex) return;
     setState(() {
@@ -59,11 +60,19 @@ class _WebViewPageState extends State<WebViewPage> {
         _customControllers.remove(key);
       }
     });
+
+    _entryUrlWorker = ever(homeController.activeWebEntryUrl, (String url) {
+      if (url.isNotEmpty && url != _lastLoadedEntryUrl) {
+        _lastLoadedEntryUrl = url;
+        _maiBotController.loadRequest(Uri.parse(url));
+      }
+    });
   }
 
   @override
   void dispose() {
     _customWebViewsWorker?.dispose();
+    _entryUrlWorker?.dispose();
     super.dispose();
   }
 
@@ -152,6 +161,7 @@ class _WebViewPageState extends State<WebViewPage> {
     final initialUrl = homeController.activeWebEntryUrl.value.isNotEmpty
         ? homeController.activeWebEntryUrl.value
         : 'http://127.0.0.1:${homeController.activeWebPort.value}';
+    _lastLoadedEntryUrl = initialUrl;
     _maiBotController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -224,8 +234,7 @@ class _WebViewPageState extends State<WebViewPage> {
       )
       ..loadRequest(Uri.parse(url));
 
-    _configureAndroidPlatform(controller, enableDebugging: true);
-
+    _configureAndroidPlatform(controller, enableDebugging: kDebugMode);
     return controller;
   }
 
@@ -325,11 +334,11 @@ class _WebViewPageState extends State<WebViewPage> {
           final url = webview['url'] ?? '';
           final int pageIndex = index + 1;
           return Visibility(
-            key: ValueKey('custom_webview_visibility_$url'),
+            key: ValueKey('custom_webview_visibility_${index}_$url'),
             visible: _currentIndex == pageIndex,
             maintainState: true,
             child: WebViewWidget(
-              key: ValueKey('custom_webview_$url'),
+              key: ValueKey('custom_webview_${index}_$url'),
               controller: _getCustomController(url),
             ),
           );

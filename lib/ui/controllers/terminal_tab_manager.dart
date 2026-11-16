@@ -204,7 +204,9 @@ class TerminalTabManager extends GetxController {
         if (isCtrlActive.value || isAltActive.value || isShiftActive.value) {
           dispatchKeyInput(data);
         } else {
-          process.stdin.add(utf8.encode(data));
+          try {
+            process.stdin.add(utf8.encode(data));
+          } catch (_) {}
         }
       };
 

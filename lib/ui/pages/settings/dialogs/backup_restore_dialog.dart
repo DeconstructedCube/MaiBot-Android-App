@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 import '../../../../core/services/backend_process_manager.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../controllers/home_controller.dart';
 
 /// 显示 Material You 风格的备份恢复选择对话框
 Future<void> showBackupRestoreDialog({
@@ -115,14 +115,24 @@ Future<void> showBackupRestoreDialog({
                               onPressed: () {
                                 unawaited(() async {
                                   final picked = await FilePicker.pickFile(
-                                    type: FileType.custom,
-                                    allowedExtensions: ['gz', 'tgz'],
+                                    type: FileType.any,
                                   );
                                   if (picked?.path != null) {
-                                    final pickedFile = File(picked!.path!);
+                                    final path = picked!.path!;
+                                    final lower = path.toLowerCase();
+                                    if (!lower.endsWith('.tar.gz') && !lower.endsWith('.tgz')) {
+                                      Get.snackbar(
+                                        '格式不支持',
+                                        '请选择 .tar.gz 或 .tgz 格式的备份文件',
+                                        snackPosition: SnackPosition.BOTTOM,
+                                      );
+                                      return;
+                                    }
+                                    final pickedFile = File(path);
                                     final stat = await pickedFile.stat();
                                     if (context.mounted) {
                                       setState(() {
+                                        backups.removeWhere((e) => e.file.path == pickedFile.path);
                                         backups.insert(
                                           0,
                                           BackupEntry(
@@ -167,15 +177,16 @@ Future<void> showBackupRestoreDialog({
                                     .withValues(alpha: 0.5),
                               ),
                             ),
-                            child: ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: backups.length > 4 ? 4 : backups.length,
-                            separatorBuilder: (_, __) => Divider(
-                              height: 1,
-                              color: colorScheme.outlineVariant
-                                  .withValues(alpha: 0.3),
-                            ),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 220),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: backups.length,
+                                separatorBuilder: (_, __) => Divider(
+                                  height: 1,
+                                  color: colorScheme.outlineVariant
+                                      .withValues(alpha: 0.3),
+                                ),
                             itemBuilder: (context, idx) {
                               final entry = backups[idx];
                               final f = entry.file;
@@ -285,6 +296,7 @@ Future<void> showBackupRestoreDialog({
                               );
                             },
                           ),
+                            ),
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -428,24 +440,20 @@ Future<void> showBackupRestoreDialog({
                               );
                         if (navigator.mounted) {
                           navigator.pop();
-                        } else if (Get.isDialogOpen == true) {
-                          Get.back(canPop: false);
                         }
                         if (success) {
                           if (!isInitialInstall) {
                             Get.snackbar(
                               '恢复成功',
-                              '已成功还原数据与配置，应用即将退出，请重新打开',
+                              '已成功还原数据与配置，正在重启 MaiBot 服务...',
                               snackPosition: SnackPosition.BOTTOM,
                               duration: const Duration(seconds: 3),
                             );
-                            Future.delayed(const Duration(seconds: 2),
-                                () async {
-                              try {
-                                await BackendProcessManager.stopService();
-                              } catch (_) {}
-                              await SystemNavigator.pop();
-                            });
+                            if (Get.isRegistered<HomeController>()) {
+                              final home = Get.find<HomeController>();
+                              unawaited(home.reloadTokensFromDisk());
+                            }
+                            await BackendProcessManager.restartService(target: ServiceTarget.maibot);
                           } else {
                             Get.snackbar(
                               '恢复成功',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:get/get.dart';
 
@@ -13,8 +14,8 @@ Future<bool> _runGitTaskWithProgressDialog({
   final isDone = false.obs;
   final isSuccess = false.obs;
   final scrollController = ScrollController();
+  bool isDialogDisposed = false;
   String pendingLine = '';
-
   void appendLog(String text) {
     final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final combined = pendingLine + normalized;
@@ -27,7 +28,7 @@ Future<bool> _runGitTaskWithProgressDialog({
       }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (scrollController.hasClients) {
+      if (!isDialogDisposed && scrollController.hasClients) {
         scrollController.jumpTo(scrollController.position.maxScrollExtent);
       }
     });
@@ -190,7 +191,8 @@ Future<bool> _runGitTaskWithProgressDialog({
     ),
     barrierDismissible: false,
   );
-  scrollController.dispose();
+  isDialogDisposed = true;
+  unawaited(Future.delayed(const Duration(milliseconds: 400), scrollController.dispose));
   return result ?? false;
 }
 
@@ -422,7 +424,7 @@ Future<void> showSwitchBranchDialog() async {
       },
     ),
   );
-  customBranchController.dispose();
+  unawaited(Future.delayed(const Duration(milliseconds: 400), customBranchController.dispose));
   if (choice != null && choice.isNotEmpty) {
     await _runGitTaskWithProgressDialog(
       title: '切换分支: $choice',

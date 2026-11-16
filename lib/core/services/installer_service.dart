@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:global_repository/global_repository.dart';
 import 'package:settings/settings.dart';
@@ -107,7 +107,7 @@ class InstallerService {
 
         // 1.1 校验或从应用 assets 流式释放镜像归档（优先走 Native 64KB 流式拷贝，避免 Dart 堆内存峰值）
         if (!await archiveFile.exists() || await archiveFile.length() < 1000000) {
-          onLog?.call('\x1b[36m[系统]\x1b[0m 准备镜像文件 (62MB)...\r\n');
+          onLog?.call('\x1b[36m[系统]\x1b[0m 准备 Ubuntu 镜像文件...\r\n');
           onProgress('准备镜像文件...', 0.0);
           try {
             int? writtenBytes;
@@ -146,42 +146,62 @@ class InstallerService {
         final busyboxPath = '${RuntimeEnvir.binPath}/busybox';
         if (onLog != null) {
           final process = await Process.start(busyboxPath, args);
+          final stdoutDone = Completer<void>();
+          final stderrDone = Completer<void>();
           int extractedFiles = 0;
           int lastLoggedPct = 0;
 
           process.stdout
               .transform(const Utf8Decoder(allowMalformed: true))
               .transform(const LineSplitter())
-              .listen((_) {
-            extractedFiles++;
-            final double ratio = (extractedFiles / totalRootfsFiles).clamp(0.0, 1.0);
-            final int currentPctInt = (ratio * 100).toInt();
+              .listen(
+                (_) {
+                  extractedFiles++;
+                  final double ratio = (extractedFiles / totalRootfsFiles).clamp(0.0, 1.0);
+                  final int currentPctInt = (ratio * 100).toInt();
 
-            if (extractedFiles % 100 == 0 || extractedFiles == totalRootfsFiles) {
-              final String pct = (ratio * 100).toStringAsFixed(1);
-              onProgress('解压系统文件 $pct%...', ratio);
-            }
+                  if (extractedFiles % 100 == 0 || extractedFiles == totalRootfsFiles) {
+                    final String pct = (ratio * 100).toStringAsFixed(1);
+                    onProgress('解压系统文件 $pct%...', ratio);
+                  }
 
-            if ((currentPctInt > lastLoggedPct && currentPctInt % 10 == 0) ||
-                extractedFiles == totalRootfsFiles) {
-              lastLoggedPct = currentPctInt;
-              final String pct = (ratio * 100).toStringAsFixed(1);
-              onLog('\x1b[32m[解压]\x1b[0m $pct% ($extractedFiles/$totalRootfsFiles)\r\n');
-            }
-          });
+                  if ((currentPctInt > lastLoggedPct && currentPctInt % 10 == 0) ||
+                      extractedFiles == totalRootfsFiles) {
+                    lastLoggedPct = currentPctInt;
+                    final String pct = (ratio * 100).toStringAsFixed(1);
+                    onLog('\x1b[32m[解压]\x1b[0m $pct% ($extractedFiles/$totalRootfsFiles)\r\n');
+                  }
+                },
+                onDone: () {
+                  if (!stdoutDone.isCompleted) stdoutDone.complete();
+                },
+                onError: (_) {
+                  if (!stdoutDone.isCompleted) stdoutDone.complete();
+                },
+              );
 
           process.stderr
               .transform(const Utf8Decoder(allowMalformed: true))
               .transform(const LineSplitter())
-              .listen((line) {
-            if (!line.contains('chown') &&
-                !line.contains('mknod') &&
-                !line.contains('Operation not permitted')) {
-              onLog('\x1b[33m[警告]\x1b[0m $line\r\n');
-            }
-          });
+              .listen(
+                (line) {
+                  if (!line.contains('chown') &&
+                      !line.contains('mknod') &&
+                      !line.contains('Operation not permitted')) {
+                    onLog('\x1b[33m[警告]\x1b[0m $line\r\n');
+                  }
+                },
+                onDone: () {
+                  if (!stderrDone.isCompleted) stderrDone.complete();
+                },
+                onError: (_) {
+                  if (!stderrDone.isCompleted) stderrDone.complete();
+                },
+              );
 
           final exitCode = await process.exitCode;
+          await Future.wait([stdoutDone.future, stderrDone.future])
+              .timeout(const Duration(seconds: 2), onTimeout: () => const []);
           if (exitCode != 0) {
             onLog('\x1b[31m[错误]\x1b[0m 解压失败，退出码: $exitCode\r\n');
             return false;
@@ -288,16 +308,17 @@ class InstallerService {
           '安装 Python 依赖...',
         );
         final pypiPrimary = MirrorRegistry.activePypiMirror;
+        final extraFlags = MirrorRegistry.pypiExtraMirrors
+            .split(RegExp(r'\s+'))
+            .where((u) => u.isNotEmpty && u != pypiPrimary)
+            .map((u) => '--extra-index-url $u')
+            .join(' ');
         final uvSyncCmd = 'export UV_HTTP_TIMEOUT=60; cd /root/MaiBot && '
-            'if command -v script >/dev/null 2>&1; then '
-            '  script -q -e -c "stty cols 45 rows 24 2>/dev/null; /root/.local/bin/uv sync --color always --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple" /dev/null; '
-            'else '
-            '  /root/.local/bin/uv sync --color always --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple; '
-            'fi';
+            '/root/.local/bin/uv sync --color always --default-index $pypiPrimary $extraFlags --extra-index-url https://pypi.org/simple';
         var success = await _runInProot(uvSyncCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         if (!success) {
           onLog?.call('\x1b[33m[Python]\x1b[0m 依赖同步重试中...\r\n');
-          final fallbackCmd = 'export UV_HTTP_TIMEOUT=90; cd /root/MaiBot && /root/.local/bin/uv sync --color always --default-index https://pypi.org/simple --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple';
+          final fallbackCmd = 'export UV_HTTP_TIMEOUT=90; cd /root/MaiBot && /root/.local/bin/uv sync --color always --default-index https://pypi.org/simple --extra-index-url $pypiPrimary $extraFlags';
           success = await _runInProot(fallbackCmd, onLog: onLog, timeout: const Duration(minutes: 8));
         }
         if (!success) return false;
@@ -305,7 +326,7 @@ class InstallerService {
         // 为虚拟环境安装标准的 pip / setuptools / wheel 工具，支持终端中直接 pip install
         onLog?.call('\x1b[36m[Python]\x1b[0m 为虚拟环境配置 pip 工具...\r\n');
         await _runInProot(
-          'cd /root/MaiBot && /root/.local/bin/uv pip install pip setuptools wheel --python /root/MaiBot/.venv/bin/python --default-index $pypiPrimary --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --extra-index-url https://pypi.org/simple',
+          'cd /root/MaiBot && /root/.local/bin/uv pip install pip setuptools wheel --python /root/MaiBot/.venv/bin/python --default-index $pypiPrimary $extraFlags --extra-index-url https://pypi.org/simple',
           onLog: onLog,
         );
         await _runInProot(
@@ -580,73 +601,100 @@ class InstallerService {
 
   static Future<bool> _downloadAndInstallUv(Function(String)? onLog) async {
     final tmpArchive = '${RuntimeEnvir.tmpPath}/uv-aarch64.tar.gz';
+    final tmpExtractedDir = Directory('${RuntimeEnvir.tmpPath}/uv-aarch64-unknown-linux-gnu');
     const releaseUrl =
         'https://github.com/astral-sh/uv/releases/download/0.9.9/uv-aarch64-unknown-linux-gnu.tar.gz';
 
-    bool downloaded = false;
-    for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
-      final target = '$mirror$releaseUrl';
-      final label = mirror.isEmpty ? '官方源' : mirror;
-      onLog?.call('\x1b[36m[下载]\x1b[0m uv ($label)...\r\n');
+    try {
+      bool downloaded = false;
+      for (final mirror in MirrorRegistry.activeGithubPrefixMirrors) {
+        final target = '$mirror$releaseUrl';
+        final label = mirror.isEmpty ? '官方源' : mirror;
+        onLog?.call('\x1b[36m[下载]\x1b[0m uv ($label)...\r\n');
 
-      if (onLog != null) {
-        final process = await Process.start(
-            '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
-        process.stdout
-            .transform(const Utf8Decoder(allowMalformed: true))
-            .listen((data) => onLog(data.replaceAll('\n', '\r\n')));
-        process.stderr
-            .transform(const Utf8Decoder(allowMalformed: true))
-            .listen((data) => onLog(data.replaceAll('\n', '\r\n')));
-        final exitCode = await process.exitCode;
-        if (exitCode == 0) {
-          downloaded = true;
-          break;
-        }
-      } else {
-        final res = await Process.run(
-            '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
-        if (res.exitCode == 0) {
-          downloaded = true;
-          break;
+        if (onLog != null) {
+          final process = await Process.start(
+              '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
+          final stdoutDone = Completer<void>();
+          final stderrDone = Completer<void>();
+          process.stdout
+              .transform(const Utf8Decoder(allowMalformed: true))
+              .listen(
+                (data) => onLog(data.replaceAll('\n', '\r\n')),
+                onDone: () {
+                  if (!stdoutDone.isCompleted) stdoutDone.complete();
+                },
+                onError: (_) {
+                  if (!stdoutDone.isCompleted) stdoutDone.complete();
+                },
+              );
+          process.stderr
+              .transform(const Utf8Decoder(allowMalformed: true))
+              .listen(
+                (data) => onLog(data.replaceAll('\n', '\r\n')),
+                onDone: () {
+                  if (!stderrDone.isCompleted) stderrDone.complete();
+                },
+                onError: (_) {
+                  if (!stderrDone.isCompleted) stderrDone.complete();
+                },
+              );
+          final exitCode = await process.exitCode;
+          await Future.wait([stdoutDone.future, stderrDone.future])
+              .timeout(const Duration(seconds: 1), onTimeout: () => const []);
+          if (exitCode == 0) {
+            downloaded = true;
+            break;
+          }
+        } else {
+          final res = await Process.run(
+              '${RuntimeEnvir.binPath}/busybox', ['wget', '-T', '15', '-O', tmpArchive, target]);
+          if (res.exitCode == 0) {
+            downloaded = true;
+            break;
+          }
         }
       }
-    }
 
-    if (!downloaded) {
-      onLog?.call('\x1b[31m[错误]\x1b[0m uv 下载失败，请检查网络\r\n');
+      if (!downloaded) {
+        onLog?.call('\x1b[31m[错误]\x1b[0m uv 下载失败，请检查网络\r\n');
+        return false;
+      }
+
+      onLog?.call('\x1b[32m[解压]\x1b[0m uv 解压中...\r\n');
+      final extractRes = await Process.run('${RuntimeEnvir.binPath}/busybox', [
+        'tar',
+        '-xzf',
+        tmpArchive,
+        '-C',
+        RuntimeEnvir.tmpPath,
+      ]);
+
+      if (extractRes.exitCode == 0) {
+        final localBin = Directory('${scripts.ubuntuPath}/root/.local/bin');
+        await localBin.create(recursive: true);
+
+        await File('${tmpExtractedDir.path}/uv').copy('${localBin.path}/uv');
+        await File('${tmpExtractedDir.path}/uvx').copy('${localBin.path}/uvx');
+        await Process.run('${RuntimeEnvir.binPath}/busybox',
+            ['chmod', '+x', '${localBin.path}/uv', '${localBin.path}/uvx']);
+        // 同时软链至 /usr/local/bin，确保系统任意路径与子进程输入 uv 均立即可用
+        try {
+          final usrLocalBin = Directory('${scripts.ubuntuPath}/usr/local/bin');
+          await usrLocalBin.create(recursive: true);
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uv', '${scripts.ubuntuPath}/usr/local/bin/uv']);
+          await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uvx', '${scripts.ubuntuPath}/usr/local/bin/uvx']);
+        } catch (_) {}
+        return true;
+      }
       return false;
-    }
-
-    onLog?.call('\x1b[32m[解压]\x1b[0m uv 解压中...\r\n');
-    final extractRes = await Process.run('${RuntimeEnvir.binPath}/busybox', [
-      'tar',
-      '-xzf',
-      tmpArchive,
-      '-C',
-      RuntimeEnvir.tmpPath,
-    ]);
-
-    if (extractRes.exitCode == 0) {
-      final localBin = Directory('${scripts.ubuntuPath}/root/.local/bin');
-      await localBin.create(recursive: true);
-
-      await File('${RuntimeEnvir.tmpPath}/uv-aarch64-unknown-linux-gnu/uv')
-          .copy('${localBin.path}/uv');
-      await File('${RuntimeEnvir.tmpPath}/uv-aarch64-unknown-linux-gnu/uvx')
-          .copy('${localBin.path}/uvx');
-      await Process.run('${RuntimeEnvir.binPath}/busybox',
-          ['chmod', '+x', '${localBin.path}/uv', '${localBin.path}/uvx']);
-      // 同时软链至 /usr/local/bin，确保系统任意路径与子进程输入 uv 均立即可用
+    } finally {
       try {
-        final usrLocalBin = Directory('${scripts.ubuntuPath}/usr/local/bin');
-        await usrLocalBin.create(recursive: true);
-        await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uv', '${scripts.ubuntuPath}/usr/local/bin/uv']);
-        await Process.run('${RuntimeEnvir.binPath}/busybox', ['ln', '-sf', '/root/.local/bin/uvx', '${scripts.ubuntuPath}/usr/local/bin/uvx']);
+        final archiveFile = File(tmpArchive);
+        if (await archiveFile.exists()) await archiveFile.delete();
+        if (await tmpExtractedDir.exists()) await tmpExtractedDir.delete(recursive: true);
       } catch (_) {}
-      return true;
     }
-    return false;
   }
 
   static Future<bool> _cloneMaibot(Function(String)? onLog) async {
@@ -657,19 +705,23 @@ class InstallerService {
         ? ['']
         : MirrorRegistry.activeGithubPrefixMirrors;
     final tmpDir = '${scripts.ubuntuPath}/root/MaiBot_tmp';
+    const canonicalRepo = 'https://github.com/Mai-with-u/MaiBot.git';
 
     for (final mirror in mirrors) {
       final repo = customRepoUrl.isNotEmpty
           ? customRepoUrl
-          : '${mirror}https://github.com/Mai-with-u/MaiBot.git';
+          : '$mirror$canonicalRepo';
       final label = mirror.isEmpty ? '官方源' : mirror;
       onLog?.call('\x1b[36m[下载]\x1b[0m MaiBot 源码 ($label)...\r\n');
       await Process.run('${RuntimeEnvir.binPath}/busybox', ['rm', '-rf', tmpDir]);
 
+      final normalizeOrigin = customRepoUrl.isEmpty
+          ? ' && git remote set-url origin $canonicalRepo'
+          : '';
       final success = await _runInProot(
         'git -c gc.auto=0 clone --depth=1 --branch main $repo /root/MaiBot_tmp && '
         'cd /root/MaiBot_tmp && '
-        'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"',
+        'git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"$normalizeOrigin',
         onLog: onLog,
         timeout: const Duration(minutes: 5),
       );

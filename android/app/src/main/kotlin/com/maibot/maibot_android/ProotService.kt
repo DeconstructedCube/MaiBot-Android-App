@@ -481,8 +481,6 @@ class ProotService : Service() {
             export UV_NO_PROGRESS=0
             export UV_INDEX_URL='$uvIndexUrl'
             export PIP_NO_COLOR=0
-            export COLUMNS=$cols
-            export LINES=$rows
             export LANG=C.UTF-8
             export LC_ALL=C.UTF-8
             export UV_LINK_MODE=copy
@@ -692,7 +690,7 @@ class ProotService : Service() {
     override fun onDestroy() {
         commandChannel.close()
         val activeProcess = maibotProcess
-        if (activeProcess != null || collectManagedPids(-1L).isNotEmpty()) {
+        if (activeProcess != null) {
             runBlocking(Dispatchers.IO) {
                 withTimeoutOrNull(1500L) {
                     safelyTerminateAllProcesses()
@@ -995,8 +993,6 @@ class ProotService : Service() {
                         put("UV_NO_PROGRESS", "0")
                         put("UV_INDEX_URL", uvIndexUrl)
                         put("PIP_NO_COLOR", "0")
-                        put("COLUMNS", cols.toString())
-                        put("LINES", rows.toString())
                         put("LANG", "C.UTF-8")
                         put("LC_ALL", "C.UTF-8")
                         put("MAIBOT_LEGACY_0X_UPGRADE_CONFIRMED", "1")

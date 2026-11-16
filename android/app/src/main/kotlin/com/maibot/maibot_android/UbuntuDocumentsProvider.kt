@@ -87,24 +87,26 @@ class UbuntuDocumentsProvider : DocumentsProvider() {
         if (parentDocumentId == null) return result
         val parent = getFileForDocId(parentDocumentId)
 
+        val rootCanonical = getUbuntuRootPath().canonicalPath
         val files = parent.listFiles()
         if (files != null) {
             for (file in files) {
-                // 跳过符号链接指向外部的情况，避免安全检查失败
+                // 跳过符号链接指向容器外部的情况，避免安全检查失败
                 try {
-                    // 检查是否是有效的子文档
+                    val canonical = file.canonicalPath
+                    if (canonical != rootCanonical && !canonical.startsWith(rootCanonical + File.separator)) {
+                        continue
+                    }
                     val childPath = file.absolutePath
                     var parentPath = parent.absolutePath
                     if (!parentPath.endsWith("/")) {
                         parentPath += "/"
                     }
 
-                    // 只包含真正的子路径
                     if (childPath.startsWith(parentPath) || childPath == parent.absolutePath) {
                         includeFile(result, null, file)
                     }
                 } catch (_: Exception) {
-                    // 跳过有问题的文件
                     continue
                 }
             }
@@ -263,9 +265,6 @@ class UbuntuDocumentsProvider : DocumentsProvider() {
         val displayName = targetFile.name
         val mimeType = getTypeForFile(targetFile)
 
-        if (mimeType.startsWith("image/")) {
-            flags = flags or DocumentsContract.Document.FLAG_SUPPORTS_THUMBNAIL
-        }
 
         val row = result.newRow()
         row.add(DocumentsContract.Document.COLUMN_DOCUMENT_ID, targetDocId)

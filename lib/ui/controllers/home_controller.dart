@@ -39,7 +39,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   late Terminal terminal = Terminal(
     maxLines: 5000,
     onOutput: (data) {
-      maibotClient.socket?.add(utf8.encode(data));
+      try {
+        maibotClient.socket?.add(utf8.encode(data));
+      } catch (_) {}
     },
     onResize: (width, height, pixelWidth, pixelHeight) {
       Log.d('maibot terminal resize: $width x $height', tag: 'HomeController');
@@ -80,14 +82,18 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   }
 
   void _handleMaibotLine(String line) {
+    final bool replaying = maibotClient.isReplaying;
     final cleanLine = MaibotLogParser.stripAnsi(line);
     final parsedToken = MaibotLogParser.parseMaibotToken(cleanLine);
     if (parsedToken != null) {
-      maiBotWebUiToken.value = parsedToken;
-      if (cleanLine.contains('临时登录密码')) {
-        maiBotTokenSource.value = 'temporary';
+      if (!replaying || maiBotWebUiToken.value.isEmpty) {
+        maiBotWebUiToken.value = parsedToken;
+        if (cleanLine.contains('临时登录密码')) {
+          maiBotTokenSource.value = 'temporary';
+        }
       }
-    } else if (cleanLine.contains('WebUI') || cleanLine.contains('Token')) {
+    } else if (!replaying &&
+        (cleanLine.contains('WebUI') || cleanLine.contains('Token'))) {
       unawaited(reloadTokensFromDisk());
     }
 
@@ -97,11 +103,13 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       if (uri != null && uri.port > 0 && uri.port <= 65535) {
         activeWebPort.value = uri.port;
       }
-      activeWebEntryUrl.value = parsedUrl;
-      lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
-      _syncProgressFromLifecycle();
-      unawaited(reloadTokensFromDisk().whenComplete(_checkAndNavigateToWebview));
-      Future.delayed(const Duration(milliseconds: 2000), () => update());
+      if (!replaying) {
+        activeWebEntryUrl.value = parsedUrl;
+        lifecycle.markPortsReady(message: 'MaiBot Web 服务已就绪');
+        _syncProgressFromLifecycle();
+        unawaited(reloadTokensFromDisk().whenComplete(_checkAndNavigateToWebview));
+        Future.delayed(const Duration(milliseconds: 2000), () => update());
+      }
     }
   }
 
@@ -288,7 +296,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     terminal.write('\x1b[36m[系统]\x1b[0m 正在启动 MaiBot 后台服务...\r\n');
 
     await BackendProcessManager.startService(
-      cols: terminal.viewWidth > 0 ? terminal.viewWidth : 60,
+      cols: terminal.viewWidth > 0 ? terminal.viewWidth : 80,
       rows: terminal.viewHeight > 0 ? terminal.viewHeight : 28,
     );
     unawaited(reloadTokensFromDisk());
@@ -316,7 +324,12 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     unawaited(reloadTokensFromDisk());
 
     _maibotStateWorker = ever(BackendProcessManager.maibotState, (state) {
-      if (state == ProcessState.running) {
+      if (state == ProcessState.starting ||
+          state == ProcessState.restarting ||
+          state == ProcessState.stopped) {
+        activeWebEntryUrl.value = '';
+      } else if (state == ProcessState.running) {
+        unawaited(reloadTokensFromDisk());
         _checkAndNavigateToWebview();
       }
     });
