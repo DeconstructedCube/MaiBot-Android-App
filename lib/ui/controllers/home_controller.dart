@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../core/storage/app_settings.dart';
 import '../../core/utils/app_log.dart';
+import '../../core/utils/runtime_envir.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../core/config/app_config.dart';
