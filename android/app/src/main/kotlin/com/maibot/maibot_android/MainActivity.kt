@@ -52,7 +52,14 @@ class MainActivity : FragmentActivity() {
     private val finishUiReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (ACTION_FINISH_UI == intent?.action && !isFinishing) {
-                finishAffinity()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAndRemoveTask()
+                } else {
+                    finishAffinity()
+                }
+                Handler(Looper.getMainLooper()).postDelayed({
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }, 150L)
             }
         }
     }
@@ -367,7 +374,11 @@ class MainActivity : FragmentActivity() {
                     fun finishAndKill() {
                         if (!completed.compareAndSet(false, true)) return
                         result.success(true)
-                        finishAffinity()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            finishAndRemoveTask()
+                        } else {
+                            finishAffinity()
+                        }
                         mainHandler.postDelayed({
                             android.os.Process.killProcess(android.os.Process.myPid())
                         }, 100L)

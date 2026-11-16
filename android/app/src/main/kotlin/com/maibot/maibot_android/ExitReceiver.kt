@@ -32,7 +32,11 @@ class ExitReceiver : BroadcastReceiver() {
             val stopIntent = Intent(context, ProotService::class.java).apply {
                 action = "STOP"
             }
-            context.startService(stopIntent)
+            try {
+                context.startService(stopIntent)
+            } catch (e: Exception) {
+                Log.w(TAG, "ExitReceiver startService(STOP) failed", e)
+            }
         }
     }
 }

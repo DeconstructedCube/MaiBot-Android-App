@@ -202,60 +202,69 @@ class MaintenanceActions {
   static Future<void> performExit({bool showConfirmation = true}) async {
     if (showConfirmation) {
       final confirm = await Get.dialog<bool>(
-        AlertDialog(
-          icon: const Icon(Icons.power_settings_new_rounded, size: 28, color: Colors.redAccent),
-          title: const Text('确认退出应用'),
-          content: const Text('退出应用将停止后台运行的服务与容器环境，确定要退出吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Get.back(result: false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () => Get.back(result: true),
-              child: const Text('退出应用'),
-            ),
-          ],
+        Builder(
+          builder: (dialogCtx) => AlertDialog(
+            icon: const Icon(Icons.power_settings_new_rounded, size: 28, color: Colors.redAccent),
+            title: const Text('确认退出应用'),
+            content: const Text('退出应用将停止后台运行的服务与容器环境，确定要退出吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                onPressed: () => Navigator.of(dialogCtx).pop(true),
+                child: const Text('退出应用'),
+              ),
+            ],
+          ),
         ),
       );
 
       if (confirm != true) return;
     }
 
-    Get.dialog(
-      const PopScope(
-        canPop: false,
-        child: Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('正在停止后台服务并退出...', style: TextStyle(fontSize: 14)),
-                ],
+    BuildContext? loadingCtx;
+    unawaited(
+      Get.dialog(
+        Builder(
+          builder: (ctx) {
+            loadingCtx = ctx;
+            return const PopScope(
+              canPop: false,
+              child: Center(
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('正在停止后台服务并退出...', style: TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
+        barrierDismissible: false,
       ),
-      barrierDismissible: false,
     );
 
     try {
-      await BackendProcessManager.stopService();
-    } catch (e) {
-      Log.e('退出应用停止服务异常: $e', tag: 'MaiBot');
-    }
-    await Future.delayed(const Duration(milliseconds: 200));
-    try {
       await const MethodChannel('maibot_channel').invokeMethod('exit_app');
-    } catch (_) {
-      if (Get.isDialogOpen == true) {
-        Get.back(canPop: false);
+    } catch (e) {
+      Log.e('exit_app 原生退出异常，降级停止服务: $e', tag: 'MaiBot');
+      try {
+        await BackendProcessManager.stopService();
+      } catch (_) {}
+      final ctx = loadingCtx;
+      if (ctx != null && ctx.mounted) {
+        Navigator.of(ctx).pop();
       }
       await SystemNavigator.pop();
     }
